@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <meta name="theme-color" content="#102238" />
   <title>SparBox Manager</title>
-  <meta name="description" content="Private Sparverwaltung mit Ziel, Buchungen und Kontoauszug." />
+  <meta name="description" content="Privater Finanzmanager – SparBox, Strafen und Ausgaben." />
   <link rel="stylesheet" href="./styles.css" />
 </head>
 <body>
@@ -13,11 +13,13 @@
     <aside class="sidebar">
       <a class="brand" href="#overview" aria-label="SparBox Übersicht"><span class="brand-mark">S</span><span>SparBox</span></a>
       <nav aria-label="Hauptnavigation">
-        <button class="nav-item active" data-view="overview"><span>⌂</span> Übersicht</button>
-        <button class="nav-item" data-view="transactions"><span>↕</span> Buchungen</button>
-        <button class="nav-item" data-view="goal"><span>◎</span> Sparziel</button>
-        <button class="nav-item" data-view="statement"><span>▤</span> Kontoauszug</button>
-        <button class="nav-item" data-view="settings"><span>⚙</span> Einstellungen</button>
+        <button class="nav-item active" data-view="overview"><span aria-hidden="true">⌂</span> Übersicht</button>
+        <button class="nav-item" data-view="transactions"><span aria-hidden="true">↕</span> Buchungen</button>
+        <button class="nav-item" data-view="goal"><span aria-hidden="true">◎</span> Sparziel</button>
+        <button class="nav-item" data-view="fines"><span aria-hidden="true">!</span> Strafen</button>
+        <button class="nav-item" data-view="expenses"><span aria-hidden="true">≡</span> Ausgaben</button>
+        <button class="nav-item" data-view="statement"><span aria-hidden="true">▤</span> Kontoauszug</button>
+        <button class="nav-item" data-view="settings"><span aria-hidden="true">⚙</span> Einstellungen</button>
       </nav>
       <div class="device-card">
         <span class="status-dot"></span>
@@ -32,13 +34,14 @@
         <div class="clock"><strong id="clockTime">--:--</strong><span id="clockDate">--.--.----</span></div>
       </header>
 
+      <!-- ÜBERSICHT -->
       <section class="view active" id="view-overview">
         <div class="hero-grid">
           <article class="balance-card">
             <div class="card-head"><span>Aktueller Sparstand</span><span class="private-badge">Privat</span></div>
             <div class="balance" id="balanceValue">0,00 €</div>
             <div class="balance-actions">
-              <button class="primary" data-open="deposit">＋ Einzahlung</button>
+              <button class="primary" data-open="deposit">+ Einzahlung</button>
               <button class="secondary" data-open="withdraw">− Auszahlung</button>
             </div>
           </article>
@@ -47,6 +50,8 @@
             <div class="goal-copy"><span class="eyebrow">Mein Sparziel</span><h2 id="goalName">Mein Sparziel</h2><p><strong id="goalCurrent">0 €</strong> von <span id="goalTarget">1.000 €</span></p><small id="goalRemaining">Noch 1.000 €</small></div>
           </article>
         </div>
+
+        <div id="financialOverview"></div>
 
         <div class="content-grid">
           <article class="panel">
@@ -59,30 +64,111 @@
               <div class="forecast-row"><div><small>Noch zu sparen</small><strong id="forecastRemaining">0 €</strong></div><div><small>Pro Monat</small><strong id="monthlyNeeded">0 €</strong></div></div>
             </article>
             <article class="panel unlock-card">
-              <div class="lock-icon">⌁</div><div><span class="eyebrow">Geldfach</span><h2>Öffnung testen</h2><p>PIN-Freigabe ohne angeschlossene Hardware.</p></div>
+              <div class="lock-icon" aria-hidden="true">⌁</div><div><span class="eyebrow">Geldfach</span><h2>Öffnung testen</h2><p>PIN-Freigabe ohne angeschlossene Hardware.</p></div>
               <button class="dark" data-open="unlock">Öffnen</button>
             </article>
           </div>
         </div>
       </section>
 
+      <!-- BUCHUNGEN -->
       <section class="view" id="view-transactions">
         <div class="page-actions"><div><p>Alle Einzahlungen und Auszahlungen in zeitlicher Reihenfolge.</p></div><div><button class="secondary" data-open="withdraw">Auszahlung</button><button class="primary" data-open="deposit">Einzahlung</button></div></div>
-        <article class="panel table-panel"><div class="filters"><input id="searchInput" type="search" placeholder="Buchungen durchsuchen…" /><select id="typeFilter"><option value="all">Alle Vorgänge</option><option value="deposit">Einzahlungen</option><option value="withdraw">Auszahlungen</option></select></div><div class="table-wrap"><table><thead><tr><th>Datum</th><th>Beschreibung</th><th>Typ</th><th class="right">Betrag</th><th class="right">Kontostand</th></tr></thead><tbody id="transactionTable"></tbody></table></div></article>
+        <article class="panel table-panel">
+          <div class="filters">
+            <input id="searchInput" type="search" placeholder="Buchungen durchsuchen…" aria-label="Buchungen durchsuchen" />
+            <select id="typeFilter" aria-label="Nach Typ filtern"><option value="all">Alle Vorgänge</option><option value="deposit">Einzahlungen</option><option value="withdraw">Auszahlungen</option></select>
+          </div>
+          <div class="table-wrap"><table><thead><tr><th>Datum</th><th>Beschreibung</th><th>Typ</th><th class="right">Betrag</th><th class="right">Kontostand</th></tr></thead><tbody id="transactionTable"></tbody></table></div>
+        </article>
       </section>
 
+      <!-- SPARZIEL -->
       <section class="view" id="view-goal">
         <div class="two-col">
-          <article class="panel form-panel"><span class="eyebrow">Ziel bearbeiten</span><h2>Wofür sparst du?</h2><form id="goalForm"><label>Name des Sparziels<input id="goalNameInput" maxlength="40" required /></label><label>Zielbetrag<input id="goalAmountInput" type="number" min="1" step="0.01" required /></label><label>Zieldatum<input id="goalDateInput" type="date" required /></label><button class="primary" type="submit">Ziel speichern</button></form></article>
+          <article class="panel form-panel"><span class="eyebrow">Ziel bearbeiten</span><h2>Wofür sparst du?</h2><form id="goalForm"><label>Name des Sparziels<input id="goalNameInput" maxlength="40" required /></label><label>Zielbetrag (€)<input id="goalAmountInput" type="number" min="1" step="0.01" required /></label><label>Zieldatum<input id="goalDateInput" type="date" required /></label><button class="primary" type="submit">Ziel speichern</button></form></article>
           <article class="panel milestone-panel"><span class="eyebrow">Meilensteine</span><h2>Dein Weg zum Ziel</h2><div id="milestones"></div></article>
         </div>
       </section>
 
+      <!-- STRAFEN -->
+      <section class="view" id="view-fines">
+        <div class="page-actions">
+          <div><p>Strafen, Forderungen und Ratenzahlungen verwalten.</p></div>
+          <button class="primary" id="addFineBtn">+ Strafe erfassen</button>
+        </div>
+        <div class="summary-row" id="finesSummary"></div>
+        <div class="module-toolbar">
+          <input type="search" id="finesSearch" placeholder="Strafen durchsuchen…" aria-label="Strafen durchsuchen" />
+          <select id="finesFilter" aria-label="Nach Status filtern">
+            <option value="all">Alle Status</option>
+            <option value="open">Offen</option>
+            <option value="installment">Ratenzahlung</option>
+            <option value="paused">Pausiert</option>
+            <option value="paid">Bezahlt</option>
+          </select>
+          <select id="finesSort" aria-label="Sortierung">
+            <option value="due">Nach Fälligkeit</option>
+            <option value="remaining">Nach Restbetrag</option>
+            <option value="name">Nach Name</option>
+          </select>
+        </div>
+        <div id="finesList" class="cards-list"></div>
+      </section>
+
+      <!-- AUSGABEN -->
+      <section class="view" id="view-expenses">
+        <div class="page-actions">
+          <div><p>Regelmäßige und einmalige Ausgaben im Überblick.</p></div>
+          <button class="primary" id="addExpenseBtn">+ Ausgabe erfassen</button>
+        </div>
+        <div class="summary-row" id="expensesSummary"></div>
+        <div class="module-toolbar">
+          <input type="search" id="expensesSearch" placeholder="Ausgaben durchsuchen…" aria-label="Ausgaben durchsuchen" />
+          <select id="expensesCategoryFilter" aria-label="Nach Kategorie filtern">
+            <option value="all">Alle Kategorien</option>
+            <option value="Miete">Miete</option>
+            <option value="Strom">Strom</option>
+            <option value="Internet">Internet</option>
+            <option value="Versicherung">Versicherung</option>
+            <option value="Telefon">Telefon</option>
+            <option value="Lebensmittel">Lebensmittel</option>
+            <option value="Transport">Transport</option>
+            <option value="Abonnement">Abonnement</option>
+            <option value="Sonstiges">Sonstiges</option>
+          </select>
+          <select id="expensesIntervalFilter" aria-label="Nach Intervall filtern">
+            <option value="all">Alle Intervalle</option>
+            <option value="once">Einmalig</option>
+            <option value="weekly">Wöchentlich</option>
+            <option value="monthly">Monatlich</option>
+            <option value="quarterly">Vierteljährlich</option>
+            <option value="yearly">Jährlich</option>
+          </select>
+          <select id="expensesStatusFilter" aria-label="Nach Status filtern">
+            <option value="all">Alle</option>
+            <option value="active">Aktiv</option>
+            <option value="paused">Pausiert</option>
+            <option value="overdue">Überfällig</option>
+          </select>
+        </div>
+        <div id="expensesList" class="cards-list"></div>
+      </section>
+
+      <!-- KONTOAUSZUG -->
       <section class="view" id="view-statement">
-        <div class="page-actions"><div><p>Erstelle einen übersichtlichen Auszug deiner gespeicherten Buchungen.</p></div><button class="primary" id="downloadPdf">⇩ Kontoauszug als PDF</button></div>
+        <div class="page-actions">
+          <div><p>Erstelle einen übersichtlichen Auszug deiner gespeicherten Buchungen.</p></div>
+          <div>
+            <button class="secondary" id="downloadFinesPdf">Strafenübersicht PDF</button>
+            <button class="secondary" id="downloadExpensesPdf">Ausgaben PDF</button>
+            <button class="primary" id="downloadPdf">Kontoauszug PDF</button>
+          </div>
+        </div>
         <article class="statement-preview" id="statementPreview"></article>
       </section>
 
+      <!-- EINSTELLUNGEN -->
       <section class="view" id="view-settings">
         <div class="two-col">
           <article class="panel form-panel"><span class="eyebrow">Sicherheit</span><h2>Öffnungs-PIN</h2><form id="pinForm"><label>Neuer sechsstelliger PIN<input id="pinInput" type="password" inputmode="numeric" maxlength="6" pattern="[0-9]{6}" placeholder="••••••" required /></label><label>PIN wiederholen<input id="pinConfirm" type="password" inputmode="numeric" maxlength="6" pattern="[0-9]{6}" placeholder="••••••" required /></label><button class="primary" type="submit">PIN ändern</button></form></article>
@@ -92,14 +178,125 @@
     </main>
   </div>
 
+  <!-- Modal: Einzahlung / Auszahlung / PIN-Öffnung -->
   <div class="modal-backdrop" id="modalBackdrop" hidden>
     <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
       <button class="modal-close" id="modalClose" aria-label="Schließen">×</button>
       <span class="eyebrow" id="modalEyebrow"></span><h2 id="modalTitle"></h2><p id="modalHint"></p>
-      <form id="transactionForm" hidden><div class="quick-values"><button type="button" data-amount="1">1 €</button><button type="button" data-amount="2">2 €</button><button type="button" data-amount="5">5 €</button><button type="button" data-amount="10">10 €</button><button type="button" data-amount="20">20 €</button><button type="button" data-amount="50">50 €</button></div><label>Betrag<input id="amountInput" type="number" min="0.01" step="0.01" required /></label><label>Notiz<input id="noteInput" maxlength="60" placeholder="z. B. Wochenbudget" /></label><button class="primary full" type="submit" id="transactionSubmit">Speichern</button></form>
-      <form id="unlockForm" hidden><label>Sechsstelliger PIN<input id="unlockPin" type="password" inputmode="numeric" maxlength="6" pattern="[0-9]{6}" placeholder="••••••" required /></label><div class="simulation-note">Simulation: Es wird noch kein echtes Schloss angesteuert.</div><button class="dark full" type="submit">Öffnung freigeben</button></form>
+      <form id="transactionForm" hidden>
+        <div class="quick-values">
+          <button type="button" data-amount="1">1 €</button>
+          <button type="button" data-amount="2">2 €</button>
+          <button type="button" data-amount="5">5 €</button>
+          <button type="button" data-amount="10">10 €</button>
+          <button type="button" data-amount="20">20 €</button>
+          <button type="button" data-amount="50">50 €</button>
+        </div>
+        <label>Betrag (€)<input id="amountInput" type="number" min="0.01" step="0.01" required /></label>
+        <label>Notiz<input id="noteInput" maxlength="60" placeholder="z. B. Wochenbudget" /></label>
+        <button class="primary full" type="submit" id="transactionSubmit">Speichern</button>
+      </form>
+      <form id="unlockForm" hidden>
+        <label>Sechsstelliger PIN<input id="unlockPin" type="password" inputmode="numeric" maxlength="6" pattern="[0-9]{6}" placeholder="••••••" required /></label>
+        <div class="simulation-note">Simulation: Es wird noch kein echtes Schloss angesteuert.</div>
+        <button class="dark full" type="submit">Öffnung freigeben</button>
+      </form>
     </div>
   </div>
+
+  <!-- Modal: Strafen / Ausgaben Formulare -->
+  <div class="modal-backdrop" id="formBackdrop" hidden>
+    <div class="modal modal-wide" role="dialog" aria-modal="true" aria-labelledby="formModalTitle">
+      <button class="modal-close" id="formModalClose" aria-label="Schließen">×</button>
+      <span class="eyebrow" id="formModalEyebrow"></span>
+      <h2 id="formModalTitle"></h2>
+
+      <!-- Strafe erfassen / bearbeiten -->
+      <form id="fineForm" hidden novalidate>
+        <div class="form-grid-2">
+          <label>Bezeichnung *<input id="fineName" maxlength="60" required /></label>
+          <label>Gläubiger / Behörde *<input id="fineCreditor" maxlength="60" required /></label>
+        </div>
+        <div class="form-grid-2">
+          <label>Aktenzeichen (optional)<input id="fineReference" maxlength="40" /></label>
+          <label>Status
+            <select id="fineStatus">
+              <option value="open">Offen</option>
+              <option value="installment">In Ratenzahlung</option>
+              <option value="paused">Pausiert</option>
+              <option value="paid">Bezahlt</option>
+            </select>
+          </label>
+        </div>
+        <div class="form-grid-2">
+          <label>Gesamtbetrag (€) *<input id="fineTotalAmount" type="number" min="0.01" step="0.01" required /></label>
+          <label>Monatliche Rate (€)<input id="fineMonthlyRate" type="number" min="0" step="0.01" /></label>
+        </div>
+        <div class="form-grid-2">
+          <label>Nächstes Zahlungsdatum<input id="fineNextDue" type="date" /></label>
+          <label>Startdatum (optional)<input id="fineStartDate" type="date" /></label>
+        </div>
+        <label>Notiz (optional)<textarea id="fineNote" maxlength="200" rows="2"></textarea></label>
+        <div class="form-actions">
+          <button type="button" class="secondary" id="fineCancelBtn">Abbrechen</button>
+          <button type="submit" class="primary">Speichern</button>
+        </div>
+      </form>
+
+      <!-- Zahlung auf Strafe erfassen -->
+      <form id="finePaymentForm" hidden novalidate>
+        <label>Gezahlter Betrag (€) *<input id="finePaymentAmount" type="number" min="0.01" step="0.01" required /></label>
+        <label>Zahlungsdatum *<input id="finePaymentDate" type="date" required /></label>
+        <label>Notiz (optional)<input id="finePaymentNote" maxlength="60" /></label>
+        <div class="form-actions">
+          <button type="button" class="secondary" id="finePaymentCancelBtn">Abbrechen</button>
+          <button type="submit" class="primary">Zahlung erfassen</button>
+        </div>
+      </form>
+
+      <!-- Ausgabe erfassen / bearbeiten -->
+      <form id="expenseForm" hidden novalidate>
+        <div class="form-grid-2">
+          <label>Bezeichnung *<input id="expenseName" maxlength="60" required /></label>
+          <label>Kategorie *
+            <select id="expenseCategory">
+              <option value="Miete">Miete</option>
+              <option value="Strom">Strom</option>
+              <option value="Internet">Internet</option>
+              <option value="Versicherung">Versicherung</option>
+              <option value="Telefon">Telefon</option>
+              <option value="Lebensmittel">Lebensmittel</option>
+              <option value="Transport">Transport</option>
+              <option value="Abonnement">Abonnement</option>
+              <option value="Sonstiges">Sonstiges</option>
+            </select>
+          </label>
+        </div>
+        <div class="form-grid-2">
+          <label>Betrag (€) *<input id="expenseAmount" type="number" min="0.01" step="0.01" required /></label>
+          <label>Zahlungsintervall *
+            <select id="expenseInterval">
+              <option value="once">Einmalig</option>
+              <option value="weekly">Wöchentlich</option>
+              <option value="monthly">Monatlich</option>
+              <option value="quarterly">Vierteljährlich</option>
+              <option value="yearly">Jährlich</option>
+            </select>
+          </label>
+        </div>
+        <div class="form-grid-2">
+          <label>Nächste Fälligkeit *<input id="expenseNextDue" type="date" required /></label>
+          <label>Zahlungsmethode (optional)<input id="expensePaymentMethod" maxlength="40" /></label>
+        </div>
+        <label>Notiz (optional)<textarea id="expenseNote" maxlength="200" rows="2"></textarea></label>
+        <div class="form-actions">
+          <button type="button" class="secondary" id="expenseCancelBtn">Abbrechen</button>
+          <button type="submit" class="primary">Speichern</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
   <script src="./app.js"></script>
 </body>
