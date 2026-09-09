@@ -136,3 +136,76 @@
   .item-actions button { width: 100%; }
   .payment-row { grid-template-columns: 90px 1fr auto; font-size: .76rem; }
 }
+
+/* ═══════════════════════════════
+   V3: MEHRERE SPARZIELE
+═══════════════════════════════ */
+
+/* Sparziele-Raster */
+.goals-grid { display: grid; gap: 18px; }
+
+/* Einzelne Ziel-Karte (erweitert .item-card) */
+.goal-item-card { border-top: 4px solid var(--green); }
+
+/* Primäres-Ziel-Badge */
+.prim-badge {
+  display: inline-block; padding: 4px 10px; border-radius: 999px;
+  background: linear-gradient(135deg,#e8f5e9,#c8e6c9); color: #2e7d32;
+  font-size: .72rem; font-weight: 800;
+}
+.prim-indicator { font-size: .78rem; color: var(--green); font-weight: 700; padding: 8px 2px; }
+
+/* Übersicht – Primäres Ziel leer */
+.goal-empty-state {
+  padding: 38px 28px; text-align: center; width: 100%;
+}
+.goal-empty-state p { color: var(--muted); margin: 10px 0 18px; }
+.goal-empty-state .eyebrow { display: block; margin-bottom: 6px; }
+
+/* Übersicht – Kompakte Sparziel-Vorschau */
+.mini-goals-row { margin-top: 18px; }
+.mini-goals-head {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 12px;
+}
+.mini-goals-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
+.mini-goal-card {
+  background: #fff; border: 1px solid rgba(28,48,70,.08); border-radius: 16px;
+  box-shadow: var(--shadow); padding: 16px; display: grid; gap: 8px;
+}
+.mini-goal-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.mini-goal-name { font-size: .85rem; font-weight: 700; }
+.mini-goal-pct  { font-size: .8rem; font-weight: 700; color: var(--muted); white-space: nowrap; }
+.mini-goal-amounts { font-size: .75rem; color: var(--muted); }
+
+/* Ziel-Tag in Buchungstabelle / Buchungszeile */
+.goal-tag {
+  display: inline-block; margin-left: 8px; padding: 2px 8px; border-radius: 999px;
+  border: 1px solid var(--green); font-size: .7rem; font-weight: 700; vertical-align: middle;
+}
+
+/* Formular-Hinweis */
+.form-hint { font-size: .82rem; color: var(--muted); margin: 2px 0; }
+.form-hint.warn { color: #b45309; background: #fffbeb; border-radius: 8px; padding: 6px 10px; }
+
+/* Form-Modal (breit, scrollbar) */
+#formBackdrop .modal { width: min(700px, 100%); max-height: 88vh; overflow-y: auto; }
+#formBackdrop form { display: grid; gap: 14px; margin-top: 16px; }
+#formBackdrop label { display: grid; gap: 7px; font-size: .82rem; font-weight: 700; }
+#formBackdrop textarea {
+  width: 100%; border: 1px solid var(--line); border-radius: 11px;
+  padding: 10px 14px; font: 500 15px inherit; color: var(--ink); outline: none; resize: vertical;
+}
+#formBackdrop textarea:focus { border-color: var(--green); box-shadow: 0 0 0 3px rgba(31,143,97,.1); }
+#formBackdrop .form-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+#formBackdrop .form-actions { display: flex; justify-content: flex-end; gap: 10px; padding-top: 6px; }
+
+@media(max-width:900px) {
+  .mini-goals-grid { grid-template-columns: 1fr 1fr; }
+  #formBackdrop .form-grid-2 { grid-template-columns: 1fr; }
+}
+@media(max-width:540px) {
+  .mini-goals-grid { grid-template-columns: 1fr; }
+  #formBackdrop .form-actions { flex-direction: column; }
+  #formBackdrop .form-actions button { width: 100%; }
+}
