@@ -1,0 +1,26 @@
+# Betriebssystem
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor / IDE
+.vscode/
+.idea/
+*.suo
+*.user
+
+# Logs
+*.log
+npm-debug.log*
+
+# Node (falls später verwendet)
+node_modules/
+
+# Umgebungsvariablen
+.env
+.env.local
+.env.*.local
+
+# Build-Artefakte (nicht dist, das ist Quellcode)
+*.tmp
+*.bak
