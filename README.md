@@ -2,6 +2,8 @@
 
 Ein privater Finanzmanager als statische Webanwendung – kein Login, keine Cloud, keine schweren Frameworks. Läuft vollständig im Browser.
 
+**🌐 Live:** [sparbox-manager.vercel.app](https://sparbox-manager.vercel.app/)
+
 > **Geplante Hardware:** Raspberry Pi Zero 2 W mit motorgesteuertem Schloss. Die Hardwareanbindung folgt in einer späteren Phase; bis dahin ist die Box-Öffnung als deutlich gekennzeichnete **Simulation** ausgeführt.
 
 ---
