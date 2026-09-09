@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="theme-color" content="#102238" />
+  <title>SparBox Manager</title>
+  <meta name="description" content="Private Sparverwaltung mit Ziel, Buchungen und Kontoauszug." />
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar">
+      <a class="brand" href="#overview" aria-label="SparBox Übersicht"><span class="brand-mark">S</span><span>SparBox</span></a>
+      <nav aria-label="Hauptnavigation">
+        <button class="nav-item active" data-view="overview"><span>⌂</span> Übersicht</button>
+        <button class="nav-item" data-view="transactions"><span>↕</span> Buchungen</button>
+        <button class="nav-item" data-view="goal"><span>◎</span> Sparziel</button>
+        <button class="nav-item" data-view="statement"><span>▤</span> Kontoauszug</button>
+        <button class="nav-item" data-view="settings"><span>⚙</span> Einstellungen</button>
+      </nav>
+      <div class="device-card">
+        <span class="status-dot"></span>
+        <div><strong>SparBox bereit</strong><small>Hardwaremodus: Simulation</small></div>
+      </div>
+    </aside>
+
+    <main>
+      <header class="topbar">
+        <button class="menu" id="menuBtn" aria-label="Menü öffnen">☰</button>
+        <div><p class="eyebrow" id="todayLabel"></p><h1 id="viewTitle">Übersicht</h1></div>
+        <div class="clock"><strong id="clockTime">--:--</strong><span id="clockDate">--.--.----</span></div>
+      </header>
+
+      <section class="view active" id="view-overview">
+        <div class="hero-grid">
+          <article class="balance-card">
+            <div class="card-head"><span>Aktueller Sparstand</span><span class="private-badge">Privat</span></div>
+            <div class="balance" id="balanceValue">0,00 €</div>
+            <div class="balance-actions">
+              <button class="primary" data-open="deposit">＋ Einzahlung</button>
+              <button class="secondary" data-open="withdraw">− Auszahlung</button>
+            </div>
+          </article>
+          <article class="goal-card">
+            <div class="goal-ring" id="goalRing"><div><strong id="goalPercent">0%</strong><span>erreicht</span></div></div>
+            <div class="goal-copy"><span class="eyebrow">Mein Sparziel</span><h2 id="goalName">Mein Sparziel</h2><p><strong id="goalCurrent">0 €</strong> von <span id="goalTarget">1.000 €</span></p><small id="goalRemaining">Noch 1.000 €</small></div>
+          </article>
+        </div>
+
+        <div class="content-grid">
+          <article class="panel">
+            <div class="panel-head"><div><span class="eyebrow">Verlauf</span><h2>Letzte Buchungen</h2></div><button class="text-button" data-view-jump="transactions">Alle anzeigen →</button></div>
+            <div class="transaction-list" id="recentTransactions"></div>
+          </article>
+          <div class="stack">
+            <article class="panel forecast">
+              <span class="eyebrow">Plan</span><h2 id="targetDateTitle">Bis zum Ziel</h2>
+              <div class="forecast-row"><div><small>Noch zu sparen</small><strong id="forecastRemaining">0 €</strong></div><div><small>Pro Monat</small><strong id="monthlyNeeded">0 €</strong></div></div>
+            </article>
+            <article class="panel unlock-card">
+              <div class="lock-icon">⌁</div><div><span class="eyebrow">Geldfach</span><h2>Öffnung testen</h2><p>PIN-Freigabe ohne angeschlossene Hardware.</p></div>
+              <button class="dark" data-open="unlock">Öffnen</button>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="view" id="view-transactions">
+        <div class="page-actions"><div><p>Alle Einzahlungen und Auszahlungen in zeitlicher Reihenfolge.</p></div><div><button class="secondary" data-open="withdraw">Auszahlung</button><button class="primary" data-open="deposit">Einzahlung</button></div></div>
+        <article class="panel table-panel"><div class="filters"><input id="searchInput" type="search" placeholder="Buchungen durchsuchen…" /><select id="typeFilter"><option value="all">Alle Vorgänge</option><option value="deposit">Einzahlungen</option><option value="withdraw">Auszahlungen</option></select></div><div class="table-wrap"><table><thead><tr><th>Datum</th><th>Beschreibung</th><th>Typ</th><th class="right">Betrag</th><th class="right">Kontostand</th></tr></thead><tbody id="transactionTable"></tbody></table></div></article>
+      </section>
+
+      <section class="view" id="view-goal">
+        <div class="two-col">
+          <article class="panel form-panel"><span class="eyebrow">Ziel bearbeiten</span><h2>Wofür sparst du?</h2><form id="goalForm"><label>Name des Sparziels<input id="goalNameInput" maxlength="40" required /></label><label>Zielbetrag<input id="goalAmountInput" type="number" min="1" step="0.01" required /></label><label>Zieldatum<input id="goalDateInput" type="date" required /></label><button class="primary" type="submit">Ziel speichern</button></form></article>
+          <article class="panel milestone-panel"><span class="eyebrow">Meilensteine</span><h2>Dein Weg zum Ziel</h2><div id="milestones"></div></article>
+        </div>
+      </section>
+
+      <section class="view" id="view-statement">
+        <div class="page-actions"><div><p>Erstelle einen übersichtlichen Auszug deiner gespeicherten Buchungen.</p></div><button class="primary" id="downloadPdf">⇩ Kontoauszug als PDF</button></div>
+        <article class="statement-preview" id="statementPreview"></article>
+      </section>
+
+      <section class="view" id="view-settings">
+        <div class="two-col">
+          <article class="panel form-panel"><span class="eyebrow">Sicherheit</span><h2>Öffnungs-PIN</h2><form id="pinForm"><label>Neuer sechsstelliger PIN<input id="pinInput" type="password" inputmode="numeric" maxlength="6" pattern="[0-9]{6}" placeholder="••••••" required /></label><label>PIN wiederholen<input id="pinConfirm" type="password" inputmode="numeric" maxlength="6" pattern="[0-9]{6}" placeholder="••••••" required /></label><button class="primary" type="submit">PIN ändern</button></form></article>
+          <article class="panel form-panel"><span class="eyebrow">Daten</span><h2>Lokaler Speicher</h2><p>Diese Testversion speichert deine Daten ausschließlich in diesem Browser.</p><button class="secondary danger" id="resetData">Testdaten zurücksetzen</button></article>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div class="modal-backdrop" id="modalBackdrop" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+      <button class="modal-close" id="modalClose" aria-label="Schließen">×</button>
+      <span class="eyebrow" id="modalEyebrow"></span><h2 id="modalTitle"></h2><p id="modalHint"></p>
+      <form id="transactionForm" hidden><div class="quick-values"><button type="button" data-amount="1">1 €</button><button type="button" data-amount="2">2 €</button><button type="button" data-amount="5">5 €</button><button type="button" data-amount="10">10 €</button><button type="button" data-amount="20">20 €</button><button type="button" data-amount="50">50 €</button></div><label>Betrag<input id="amountInput" type="number" min="0.01" step="0.01" required /></label><label>Notiz<input id="noteInput" maxlength="60" placeholder="z. B. Wochenbudget" /></label><button class="primary full" type="submit" id="transactionSubmit">Speichern</button></form>
+      <form id="unlockForm" hidden><label>Sechsstelliger PIN<input id="unlockPin" type="password" inputmode="numeric" maxlength="6" pattern="[0-9]{6}" placeholder="••••••" required /></label><div class="simulation-note">Simulation: Es wird noch kein echtes Schloss angesteuert.</div><button class="dark full" type="submit">Öffnung freigeben</button></form>
+    </div>
+  </div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script src="./app.js"></script>
+</body>
+</html>
