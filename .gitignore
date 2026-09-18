@@ -13,14 +13,18 @@ desktop.ini
 *.log
 npm-debug.log*
 
-# Node (falls später verwendet)
+# Node
 node_modules/
 
-# Umgebungsvariablen
+# Umgebungsvariablen – niemals echte Werte committen
 .env
 .env.local
 .env.*.local
+.env.production
 
-# Build-Artefakte (nicht dist, das ist Quellcode)
+# Vite-Build
+dist/
+
+# Build-Artefakte
 *.tmp
 *.bak
