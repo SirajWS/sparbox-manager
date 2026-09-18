@@ -16,10 +16,11 @@ export function todayISO() {
   return `${y}-${m}-${day}`;
 }
 
-export function formatDate(iso) {
+export function formatDate(iso, lang = 'de') {
   if (!iso) return '–';
   try {
-    return new Intl.DateTimeFormat('de-DE', {
+    const locale = lang === 'en' ? 'en-GB' : 'de-DE';
+    return new Intl.DateTimeFormat(locale, {
       day: '2-digit',
       month: '2-digit',
       year: 'numeric'

@@ -16,6 +16,9 @@ Phase 1 speichert Buchungen dauerhaft in Supabase. Es gibt kein Kassensystem, ke
 - Schnellerfassung ohne Speichern-Button (Abschluss per letztem Pflichtfeld / Enter / Blur)
 - Übersicht: Einzahlungen, Ausgaben, aktueller Stand, von Siraj/Chedi bezahlte Ausgaben
 - Buchungsliste mit Entfernen
+- Ware / Einkauf mit auswählbarem Artikel (Liste in `src/lib/catalog.js`)
+- Mitarbeiterliste in Supabase; Vorschüsse als Personal-Ausgaben im selben Ledger
+- Deutsch / English mit Umschalter unter Einstellungen
 - Kontoauszug inkl. einfachem PDF
 - Optional Realtime: INSERT/DELETE erscheinen beim anderen Gerät ohne Reload
 
@@ -81,9 +84,15 @@ Die App legt das Projekt nicht selbst an.
    - Trigger für `created_by`
    - Row Level Security
    - Realtime-Publication
-6. Realtime: Table `bookings` muss in der Publication `supabase_realtime` stehen (macht das SQL)
+   - Phase 1.1: optionale Spalten `item`, `booking_kind`, `employee_name`
+   - Phase 1.2: Tabelle `employees`
+6. Realtime: Tables `bookings` und `employees` müssen in `supabase_realtime` stehen (macht das SQL)
+
+Wenn `bookings` schon existiert und nur die Mitarbeiterliste fehlt: [`supabase/migrations/phase-1-2-employees.sql`](supabase/migrations/phase-1-2-employees.sql) ausführen. Das ändert keine Buchungen.
 
 Kein Google-Login. Keine Passwörter in Git.
+
+Artikel- und Mitarbeiterlisten stehen zentral in `src/lib/catalog.js` und können später ergänzt werden, ohne das Datenmodell zu ändern.
 
 ---
 
@@ -114,8 +123,9 @@ Kein Google-Login. Keine Passwörter in Git.
 
 ---
 
-## Nächste kleine Schritte (nicht Phase 1)
+## Nächste kleine Schritte (nicht Phase 1.1)
 
+- Endgültige Artikelliste in `src/lib/catalog.js` ergänzen
 - PDF mehrseitig, wenn sehr viele Buchungen auf eine Seite nicht mehr passen
 - Buchung nachträglich bearbeiten (UPDATE ist per RLS schon erlaubt, in der UI noch nicht)
 - Filter in der Buchungsliste

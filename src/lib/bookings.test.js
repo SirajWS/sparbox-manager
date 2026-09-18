@@ -3,16 +3,24 @@ import {
   applyDelete,
   applyInsert,
   bookingFingerprint,
+  bookingKindOf,
+  bookingTitle,
   canStartSave,
   categoriesForType,
+  employeeAdvanceSummaries,
   isFormComplete,
-  summarize
+  resolveItem,
+  summarize,
+  toAdvancePayload,
+  toNormalPayload
 } from './bookings.js';
+import { CUSTOM_ITEM, PURCHASE_CATEGORY, PURCHASE_ITEMS } from './catalog.js';
 
 const baseForm = {
   type: 'out',
   amount: 85.5,
-  category: 'Ware / Einkauf',
+  category: PURCHASE_CATEGORY,
+  item: 'Thunfisch',
   date: '2026-09-18',
   paidBy: 'chedi',
   note: ''
@@ -25,6 +33,25 @@ describe('booking form completeness', () => {
     expect(isFormComplete({ ...baseForm, category: '' })).toBe(false);
     expect(isFormComplete({ ...baseForm, paidBy: '' })).toBe(false);
     expect(isFormComplete({ ...baseForm, note: '' })).toBe(true);
+  });
+
+  it('requires an item for Ware / Einkauf', () => {
+    expect(isFormComplete({ ...baseForm, item: '' })).toBe(false);
+    expect(resolveItem({ ...baseForm, item: 'Thunfisch' })).toBe('Thunfisch');
+  });
+
+  it('requires a custom name when article is Sonstiges', () => {
+    const other = { ...baseForm, item: CUSTOM_ITEM, itemName: '' };
+    expect(isFormComplete(other)).toBe(false);
+    expect(isFormComplete({ ...other, itemName: 'Mayonnaise' })).toBe(true);
+    expect(resolveItem({ ...other, itemName: 'Mayonnaise' })).toBe('Mayonnaise');
+  });
+
+  it('stores no item for non-purchase categories', () => {
+    const rent = { ...baseForm, category: 'Miete', item: 'Thunfisch' };
+    expect(isFormComplete(rent)).toBe(true);
+    expect(resolveItem(rent)).toBe(null);
+    expect(toNormalPayload(rent).item).toBe(null);
   });
 });
 
@@ -66,6 +93,20 @@ describe('auto-save without timer', () => {
       inFlightFingerprint: null
     })).toBe(false);
   });
+
+  it('treats an advance as complete only with employee, amount, date and paidBy', () => {
+    const advance = {
+      bookingKind: 'employee_advance',
+      amount: 100,
+      employeeName: 'Mitarbeiter A',
+      date: '2026-09-18',
+      paidBy: 'chedi',
+      note: ''
+    };
+    expect(isFormComplete(advance)).toBe(true);
+    expect(isFormComplete({ ...advance, employeeName: '' })).toBe(false);
+    expect(isFormComplete({ ...advance, amount: 0 })).toBe(false);
+  });
 });
 
 describe('bookings source of truth', () => {
@@ -100,5 +141,67 @@ describe('bookings source of truth', () => {
     expect(categoriesForType('out')).toContain('Ware / Einkauf');
     expect(categoriesForType('in')).toContain('Investition / Einlage');
     expect(categoriesForType('in')).not.toContain('Miete');
+  });
+
+  it('keeps a single purchase-item list', () => {
+    expect(PURCHASE_ITEMS).toContain('Thunfisch');
+    expect(PURCHASE_ITEMS[PURCHASE_ITEMS.length - 1]).toBe('Sonstiges');
+  });
+
+  it('treats employee advances as normal expenses exactly once', () => {
+    const ledger = [
+      { id: 'n1', type: 'out', amount: 40, paid_by: 'siraj', booking_kind: 'normal' },
+      {
+        id: 'v1',
+        type: 'out',
+        amount: 100,
+        paid_by: 'chedi',
+        category: 'Personal',
+        booking_kind: 'employee_advance',
+        employee_name: 'Mitarbeiter A'
+      },
+      {
+        id: 'v2',
+        type: 'out',
+        amount: 25,
+        paid_by: 'siraj',
+        category: 'Personal',
+        booking_kind: 'employee_advance',
+        employee_name: 'Mitarbeiter A'
+      }
+    ];
+    const totals = summarize(ledger);
+    expect(totals.totalOut).toBe(165);
+    expect(totals.paidByChedi).toBe(100);
+    expect(totals.paidBySiraj).toBe(65);
+    expect(employeeAdvanceSummaries(ledger, [{ name: 'Mitarbeiter A' }])[0].total).toBe(125);
+    expect(bookingKindOf(ledger[1])).toBe('employee_advance');
+  });
+
+  it('maps an advance to a Personal booking without a second ledger', () => {
+    const payload = toAdvancePayload({
+      amount: 100,
+      employeeName: 'Mitarbeiter A',
+      date: '2026-09-18',
+      paidBy: 'chedi',
+      note: ''
+    });
+    expect(payload).toMatchObject({
+      type: 'out',
+      category: 'Personal',
+      item: null,
+      booking_kind: 'employee_advance',
+      employee_name: 'Mitarbeiter A',
+      paid_by: 'chedi',
+      note: 'Vorschuss – Mitarbeiter A'
+    });
+  });
+
+  it('still reads old bookings without optional fields', () => {
+    const legacy = [{ id: 'old', type: 'out', amount: '12.000', paid_by: 'chedi', category: 'Miete' }];
+    expect(summarize(legacy).totalOut).toBe(12);
+    expect(bookingKindOf(legacy[0])).toBe('normal');
+    expect(resolveItem({ type: 'out', category: 'Miete' })).toBe(null);
+    expect(bookingTitle(legacy[0])).toBe('Miete');
   });
 });

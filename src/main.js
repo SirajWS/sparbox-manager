@@ -4,31 +4,58 @@ import {
   applyDelete,
   applyInsert,
   bookingFingerprint,
+  bookingTitle,
   canStartSave,
   categoriesForType,
+  employeeAdvanceSummaries,
+  employeeAdvances,
   isFormComplete,
-  paidByLabel,
+  needsCustomItemName,
   runningBalances,
   sortNewestFirst,
   summarize,
-  typeLabel
+  toAdvancePayload,
+  toNormalPayload
 } from './lib/bookings.js';
+import {
+  applyEmployeeDelete,
+  applyEmployeeInsert,
+  canRecordAdvance,
+  validateEmployeeName
+} from './lib/employees.js';
+import { CUSTOM_ITEM, PURCHASE_CATEGORY, PURCHASE_ITEMS } from './lib/catalog.js';
 import { formatTnd, parseAmount } from './lib/money.js';
 import { esc, formatDate, isNetworkError, todayISO } from './lib/format.js';
 import { downloadStatementPdf } from './lib/pdf.js';
+import {
+  applyStaticI18n,
+  categoryLabel,
+  itemLabel,
+  loadLanguage,
+  localeFor,
+  paidByLabelI18n,
+  saveLanguage,
+  t,
+  typeLabelI18n
+} from './lib/i18n.js';
 
-const VIEWS = {
-  overview: 'Übersicht',
-  bookings: 'Buchungen',
-  statement: 'Kontoauszug',
-  settings: 'Einstellungen'
+const VIEW_KEYS = {
+  overview: 'nav_overview',
+  bookings: 'nav_bookings',
+  employees: 'nav_employees',
+  statement: 'nav_statement',
+  settings: 'nav_settings'
 };
+
+const BOOKING_COLUMNS = 'id,type,amount,currency,category,item,note,date,paid_by,booking_kind,employee_name,created_at,created_by';
 
 const supabase = createSupabase();
 const $ = (sel) => document.querySelector(sel);
 
+let lang = loadLanguage(window.localStorage);
 let session = null;
 let bookings = [];
+let employees = [];
 let realtimeChannel = null;
 let savingLock = false;
 let inFlightFingerprint = null;
@@ -39,8 +66,19 @@ const formState = {
   paidBy: '',
   get amount() { return parseAmount($('#amount-input').value); },
   get category() { return $('#category-input').value; },
+  get item() { return $('#item-input').value; },
+  get itemName() { return $('#item-name-input').value; },
   get date() { return $('#date-input').value; },
   get note() { return $('#note-input').value; }
+};
+
+const advanceState = {
+  paidBy: '',
+  bookingKind: 'employee_advance',
+  get employeeName() { return $('#employee-input').value; },
+  get amount() { return parseAmount($('#advance-amount-input').value); },
+  get date() { return $('#advance-date-input').value; },
+  get note() { return $('#advance-note-input').value; }
 };
 
 function showToast(message) {
@@ -65,42 +103,99 @@ function setScreen({ boot = true, setup = true, login = true, app = true }) {
 
 function tickClock() {
   const now = new Date();
-  $('#clock-time').textContent = now.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
-  $('#clock-date').textContent = now.toLocaleDateString('de-DE');
-  $('#today-label').textContent = now.toLocaleDateString('de-DE', { weekday: 'long' });
+  const locale = localeFor(lang);
+  $('#clock-time').textContent = now.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' });
+  $('#clock-date').textContent = now.toLocaleDateString(locale);
+  $('#today-label').textContent = now.toLocaleDateString(locale, { weekday: 'long' });
 }
 
 function switchView(view) {
   currentView = view;
   document.querySelectorAll('.view').forEach((el) => el.classList.toggle('active', el.id === `view-${view}`));
   document.querySelectorAll('.nav-item').forEach((el) => el.classList.toggle('active', el.dataset.view === view));
-  $('#view-title').textContent = VIEWS[view] || view;
+  $('#view-title').textContent = t(lang, VIEW_KEYS[view] || view);
   $('#sidebar').classList.remove('open');
   if (view === 'bookings') $('#amount-input').focus();
+  if (view === 'employees') {
+    if (canRecordAdvance(employees)) $('#advance-amount-input').focus();
+    else $('#employee-name-input').focus();
+  }
 }
 
 function fillCategories() {
   const select = $('#category-input');
   const options = categoriesForType(formState.type);
   const keep = options.includes(select.value) ? select.value : '';
-  select.innerHTML = '<option value="">Kategorie wählen</option>'
-    + options.map((name) => `<option value="${esc(name)}">${esc(name)}</option>`).join('');
+  select.innerHTML = `<option value="">${esc(t(lang, 'category_placeholder'))}</option>`
+    + options.map((name) => `<option value="${esc(name)}">${esc(categoryLabel(lang, name))}</option>`).join('');
+  select.value = keep;
+  syncItemFields();
+}
+
+function fillItems() {
+  const select = $('#item-input');
+  const keep = PURCHASE_ITEMS.includes(select.value) ? select.value : '';
+  select.innerHTML = `<option value="">${esc(t(lang, 'item_placeholder'))}</option>`
+    + PURCHASE_ITEMS.map((name) => `<option value="${esc(name)}">${esc(itemLabel(lang, name))}</option>`).join('');
   select.value = keep;
 }
 
-function readForm() {
+function fillEmployees() {
+  const select = $('#employee-input');
+  const keep = employees.some((row) => row.name === select.value) ? select.value : '';
+  const hasEmployees = canRecordAdvance(employees);
+  $('#no-employees-hint').hidden = hasEmployees;
+  select.disabled = !hasEmployees;
+  $('#advance-amount-input').disabled = !hasEmployees;
+  $('#advance-date-input').disabled = !hasEmployees;
+  $('#advance-note-input').disabled = !hasEmployees;
+  document.querySelectorAll('[data-advance-paid-by]').forEach((btn) => { btn.disabled = !hasEmployees; });
+  if (!hasEmployees) {
+    select.innerHTML = `<option value="">${esc(t(lang, 'no_employees'))}</option>`;
+    return;
+  }
+  select.innerHTML = `<option value="">${esc(t(lang, 'employee_placeholder'))}</option>`
+    + employees.map((row) => `<option value="${esc(row.name)}">${esc(row.name)}</option>`).join('');
+  select.value = keep;
+}
+
+function syncItemFields() {
+  const showItem = formState.type === 'out' && formState.category === PURCHASE_CATEGORY;
+  $('#item-field').hidden = !showItem;
+  $('#item-name-field').hidden = !showItem || formState.item !== CUSTOM_ITEM;
+  if (!showItem) {
+    $('#item-input').value = '';
+    $('#item-name-input').value = '';
+  }
+}
+
+function readBookingForm() {
   return {
     type: formState.type,
     amount: formState.amount,
     category: formState.category,
+    item: formState.item,
+    itemName: formState.itemName,
     date: formState.date,
     paidBy: formState.paidBy,
-    note: formState.note
+    note: formState.note,
+    bookingKind: 'normal'
   };
 }
 
-function setBookingError(message) {
-  const el = $('#booking-error');
+function readAdvanceForm() {
+  return {
+    bookingKind: 'employee_advance',
+    employeeName: advanceState.employeeName,
+    amount: advanceState.amount,
+    date: advanceState.date,
+    paidBy: advanceState.paidBy,
+    note: advanceState.note
+  };
+}
+
+function setFormError(id, message) {
+  const el = $(id);
   el.hidden = !message;
   el.textContent = message || '';
 }
@@ -108,11 +203,14 @@ function setBookingError(message) {
 function bookingRow(booking, compact = false) {
   const out = booking.type === 'out';
   const note = booking.note ? `<small>${esc(booking.note)}</small>` : '';
-  const remove = compact ? '' : `<button type="button" class="text-button danger" data-remove="${esc(booking.id)}">Entfernen</button>`;
+  const remove = compact ? '' : `<button type="button" class="text-button danger" data-remove="${esc(booking.id)}">${esc(t(lang, 'remove'))}</button>`;
+  const title = booking.item
+    ? `${categoryLabel(lang, booking.category)} · ${itemLabel(lang, booking.item)}`
+    : bookingTitle(booking, { advance: t(lang, 'advance_label'), employee: t(lang, 'employee') });
   return `<article class="booking-item">
     <div class="booking-copy">
-      <strong>${esc(booking.category)}</strong>
-      <small>${formatDate(booking.date)} · ${typeLabel(booking.type)} · ${paidByLabel(booking.paid_by)}</small>
+      <strong>${esc(title)}</strong>
+      <small>${formatDate(booking.date, lang)} · ${typeLabelI18n(lang, booking.type)} · ${paidByLabelI18n(lang, booking.paid_by)}</small>
       ${note}
     </div>
     <div class="booking-actions">
@@ -129,17 +227,43 @@ function renderOverview() {
   $('#sum-out').textContent = formatTnd(totals.totalOut);
   $('#sum-siraj').textContent = formatTnd(totals.paidBySiraj);
   $('#sum-chedi').textContent = formatTnd(totals.paidByChedi);
-  const recent = sortNewestFirst(bookings).slice(0, 8);
+  const recent = sortNewestFirst(bookings).slice(0, 6);
   $('#recent-bookings').innerHTML = recent.length
     ? recent.map((row) => bookingRow(row, true)).join('')
-    : '<div class="empty">Noch keine Buchungen.</div>';
+    : `<div class="empty">${esc(t(lang, 'no_bookings'))}</div>`;
 }
 
 function renderBookingList() {
   const rows = sortNewestFirst(bookings);
   $('#booking-list').innerHTML = rows.length
     ? rows.map((row) => bookingRow(row)).join('')
-    : '<div class="empty">Noch keine Buchungen gespeichert.</div>';
+    : `<div class="empty">${esc(t(lang, 'no_bookings_saved'))}</div>`;
+}
+
+function renderEmployeeChips() {
+  $('#employee-chips').innerHTML = employees.length
+    ? employees.map((row) => `<span class="employee-chip">${esc(row.name)}<button type="button" class="text-button danger" data-remove-employee="${esc(row.id)}">${esc(t(lang, 'remove'))}</button></span>`).join('')
+    : '';
+}
+
+function renderEmployees() {
+  fillEmployees();
+  renderEmployeeChips();
+  const summaries = employeeAdvanceSummaries(bookings, employees);
+  $('#employee-summary').innerHTML = summaries.length
+    ? summaries.map((row) => `
+        <div>
+          <small>${esc(row.name)}</small>
+          <strong>${formatTnd(row.total)}</strong>
+          <small>${row.last ? esc(t(lang, 'last_advance', { date: formatDate(row.last.date, lang) })) : esc(t(lang, 'no_advance_yet'))}</small>
+        </div>
+      `).join('')
+    : `<div class="empty">${esc(t(lang, 'no_employees'))}</div>`;
+
+  const rows = employeeAdvances(bookings);
+  $('#advance-list').innerHTML = rows.length
+    ? rows.map((row) => bookingRow(row)).join('')
+    : `<div class="empty">${esc(t(lang, 'no_advances'))}</div>`;
 }
 
 function renderStatement() {
@@ -148,56 +272,94 @@ function renderStatement() {
   const rows = sortNewestFirst(bookings);
   const table = rows.length
     ? `<div class="table-wrap"><table>
-        <thead><tr><th>Datum</th><th>Typ</th><th>Kategorie</th><th>Bezahlt von</th><th>Beschreibung</th><th class="right">Betrag</th><th class="right">Stand</th></tr></thead>
+        <thead><tr>
+          <th>${esc(t(lang, 'col_date'))}</th>
+          <th>${esc(t(lang, 'col_type'))}</th>
+          <th>${esc(t(lang, 'col_category'))}</th>
+          <th>${esc(t(lang, 'col_item_advance'))}</th>
+          <th>${esc(t(lang, 'col_paid_by'))}</th>
+          <th>${esc(t(lang, 'col_note'))}</th>
+          <th class="right">${esc(t(lang, 'col_amount'))}</th>
+          <th class="right">${esc(t(lang, 'col_balance'))}</th>
+        </tr></thead>
         <tbody>${rows.map((booking) => {
           const out = booking.type === 'out';
+          const extra = booking.employee_name || (booking.item ? itemLabel(lang, booking.item) : '–');
           return `<tr>
-            <td>${formatDate(booking.date)}</td>
-            <td><span class="type-pill ${out ? 'out' : ''}">${typeLabel(booking.type)}</span></td>
-            <td>${esc(booking.category)}</td>
-            <td>${esc(paidByLabel(booking.paid_by))}</td>
+            <td>${formatDate(booking.date, lang)}</td>
+            <td><span class="type-pill ${out ? 'out' : ''}">${typeLabelI18n(lang, booking.type)}</span></td>
+            <td>${esc(categoryLabel(lang, booking.category))}</td>
+            <td>${esc(extra)}</td>
+            <td>${esc(paidByLabelI18n(lang, booking.paid_by))}</td>
             <td>${esc(booking.note || '–')}</td>
             <td class="right amount ${out ? 'out' : ''}">${out ? '−' : '+'}${formatTnd(booking.amount)}</td>
             <td class="right">${formatTnd(stands[booking.id])}</td>
           </tr>`;
         }).join('')}</tbody>
       </table></div>`
-    : '<div class="empty">Noch keine Buchungen.</div>';
+    : `<div class="empty">${esc(t(lang, 'no_bookings'))}</div>`;
 
   $('#statement-preview').innerHTML = `
     <div class="statement-brand">
-      <div><span class="eyebrow">MixMax Manager</span><h2>Kontoauszug</h2></div>
-      <div>${formatDate(todayISO())}</div>
+      <div><span class="eyebrow">MixMax Manager</span><h2>${esc(t(lang, 'statement_title'))}</h2></div>
+      <div>${formatDate(todayISO(), lang)}</div>
     </div>
     <div class="statement-summary">
-      <div><small>Einzahlungen</small><strong>${formatTnd(totals.totalIn)}</strong></div>
-      <div><small>Ausgaben</small><strong class="col-red">${formatTnd(totals.totalOut)}</strong></div>
-      <div><small>Aktueller Stand</small><strong>${formatTnd(totals.balance)}</strong></div>
+      <div><small>${esc(t(lang, 'income'))}</small><strong>${formatTnd(totals.totalIn)}</strong></div>
+      <div><small>${esc(t(lang, 'expenses'))}</small><strong class="col-red">${formatTnd(totals.totalOut)}</strong></div>
+      <div><small>${esc(t(lang, 'current_balance'))}</small><strong>${formatTnd(totals.balance)}</strong></div>
     </div>
     ${table}`;
 }
 
 function renderAll() {
+  applyLanguage();
   renderOverview();
   renderBookingList();
+  renderEmployees();
   renderStatement();
+}
+
+function applyLanguage() {
+  document.documentElement.lang = lang;
+  applyStaticI18n(document, lang);
+  document.querySelectorAll('[data-lang]').forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.lang === lang);
+  });
+  $('#view-title').textContent = t(lang, VIEW_KEYS[currentView] || currentView);
+  fillCategories();
+  fillItems();
+  tickClock();
+}
+
+function setLanguage(next) {
+  lang = saveLanguage(next, window.localStorage);
+  renderAll();
 }
 
 async function loadBookings() {
   const { data, error } = await supabase
     .from('bookings')
-    .select('id,type,amount,currency,category,note,date,paid_by,created_at,created_by')
+    .select(BOOKING_COLUMNS)
     .order('date', { ascending: false })
     .order('created_at', { ascending: false });
   if (error) throw error;
   bookings = data || [];
-  renderAll();
+}
+
+async function loadEmployees() {
+  const { data, error } = await supabase
+    .from('employees')
+    .select('id,name,created_at,created_by')
+    .order('name');
+  if (error) throw error;
+  employees = data || [];
 }
 
 function subscribeRealtime() {
   if (realtimeChannel) supabase.removeChannel(realtimeChannel);
   realtimeChannel = supabase
-    .channel('bookings-live')
+    .channel('mixmax-live')
     .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'bookings' }, (payload) => {
       bookings = applyInsert(bookings, payload.new);
       renderAll();
@@ -206,11 +368,18 @@ function subscribeRealtime() {
       bookings = applyDelete(bookings, payload.old?.id);
       renderAll();
     })
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'employees' }, (payload) => {
+      employees = applyEmployeeInsert(employees, payload.new);
+      renderAll();
+    })
+    .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'employees' }, (payload) => {
+      employees = applyEmployeeDelete(employees, payload.old?.id);
+      renderAll();
+    })
     .subscribe();
 }
 
-async function trySaveBooking() {
-  const form = readForm();
+async function insertBooking(form, payload, onSuccess) {
   const fingerprint = bookingFingerprint(form);
   if (!canStartSave({
     complete: isFormComplete(form),
@@ -221,55 +390,122 @@ async function trySaveBooking() {
 
   savingLock = true;
   inFlightFingerprint = fingerprint;
-  setBookingError('');
 
   try {
     const { data, error } = await supabase.from('bookings').insert({
-      type: form.type,
-      amount: form.amount,
-      currency: 'TND',
-      category: form.category,
-      note: String(form.note || '').trim() || null,
-      date: form.date,
-      paid_by: form.paidBy,
+      ...payload,
       created_by: session.user.id
     }).select().single();
-
     if (error) throw error;
-
     bookings = applyInsert(bookings, data);
     renderAll();
-    $('#amount-input').value = '';
-    $('#note-input').value = '';
-    showToast(`${formatTnd(form.amount)} gespeichert`);
-    $('#amount-input').focus();
+    onSuccess(form, data);
   } catch (error) {
-    const message = isNetworkError(error)
-      ? 'Verbindung fehlgeschlagen. Buchung wurde nicht gespeichert.'
-      : 'Speichern fehlgeschlagen. Buchung wurde nicht gespeichert.';
-    setBookingError(message);
-    showToast(message);
+    throw error;
   } finally {
     savingLock = false;
     inFlightFingerprint = null;
   }
 }
 
+async function trySaveBooking() {
+  const form = readBookingForm();
+  setFormError('#booking-error', '');
+  try {
+    await insertBooking(form, toNormalPayload(form), () => {
+      $('#amount-input').value = '';
+      $('#note-input').value = '';
+      if (needsCustomItemName(form)) $('#item-name-input').value = '';
+      showToast(t(lang, 'saved', { amount: formatTnd(form.amount) }));
+      $('#amount-input').focus();
+    });
+  } catch (error) {
+    if (!isFormComplete(form)) return;
+    const message = isNetworkError(error) ? t(lang, 'save_offline') : t(lang, 'save_failed');
+    setFormError('#booking-error', message);
+    showToast(message);
+  }
+}
+
+async function trySaveAdvance() {
+  if (!canRecordAdvance(employees)) return;
+  const form = readAdvanceForm();
+  setFormError('#advance-error', '');
+  try {
+    await insertBooking(form, toAdvancePayload(form), () => {
+      $('#advance-amount-input').value = '';
+      $('#advance-note-input').value = '';
+      showToast(t(lang, 'saved', { amount: formatTnd(form.amount) }));
+      $('#advance-amount-input').focus();
+    });
+  } catch (error) {
+    if (!isFormComplete(form)) return;
+    const message = isNetworkError(error) ? t(lang, 'save_offline') : t(lang, 'save_failed');
+    setFormError('#advance-error', message);
+    showToast(message);
+  }
+}
+
 async function removeBooking(id) {
   const booking = bookings.find((row) => row.id === id);
   if (!booking) return;
-  const ok = window.confirm(`Buchung über ${formatTnd(booking.amount)} wirklich entfernen?`);
+  const ok = window.confirm(t(lang, 'confirm_remove_booking', { amount: formatTnd(booking.amount) }));
   if (!ok) return;
   const { error } = await supabase.from('bookings').delete().eq('id', id);
   if (error) {
-    const message = isNetworkError(error)
-      ? 'Verbindung fehlgeschlagen. Buchung wurde nicht gelöscht.'
-      : 'Löschen fehlgeschlagen.';
-    showToast(message);
+    showToast(isNetworkError(error) ? t(lang, 'delete_offline') : t(lang, 'delete_failed'));
     return;
   }
   bookings = applyDelete(bookings, id);
   renderAll();
+}
+
+async function addEmployee(event) {
+  event.preventDefault();
+  const checked = validateEmployeeName($('#employee-name-input').value, employees);
+  if (!checked.ok) {
+    setFormError('#employee-error', t(lang, checked.error === 'duplicate' ? 'employee_duplicate' : 'employee_empty'));
+    return;
+  }
+  setFormError('#employee-error', '');
+  const { data, error } = await supabase.from('employees').insert({
+    name: checked.name,
+    created_by: session.user.id
+  }).select().single();
+  if (error) {
+    const duplicate = /duplicate|unique/i.test(error.message || '');
+    setFormError('#employee-error', duplicate ? t(lang, 'employee_duplicate') : t(lang, 'employee_save_failed'));
+    return;
+  }
+  employees = applyEmployeeInsert(employees, data);
+  $('#employee-name-input').value = '';
+  renderAll();
+}
+
+async function removeEmployee(id) {
+  const employee = employees.find((row) => row.id === id);
+  if (!employee) return;
+  const ok = window.confirm(t(lang, 'confirm_remove_employee', { name: employee.name }));
+  if (!ok) return;
+  const previousBookings = bookings;
+  const { error } = await supabase.from('employees').delete().eq('id', id);
+  if (error) {
+    showToast(t(lang, 'employee_delete_failed'));
+    return;
+  }
+  employees = applyEmployeeDelete(employees, id);
+  bookings = previousBookings;
+  renderAll();
+}
+
+function bindAmountCommit(input, saveFn) {
+  input.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      saveFn();
+    }
+  });
+  input.addEventListener('blur', () => saveFn());
 }
 
 function bindAppEvents() {
@@ -283,6 +519,9 @@ function bindAppEvents() {
   $('#brand-link').addEventListener('click', (event) => {
     event.preventDefault();
     switchView('overview');
+  });
+  document.querySelectorAll('[data-lang]').forEach((btn) => {
+    btn.addEventListener('click', () => setLanguage(btn.dataset.lang));
   });
 
   document.querySelectorAll('[data-type]').forEach((btn) => {
@@ -302,45 +541,85 @@ function bindAppEvents() {
     });
   });
 
-  $('#category-input').addEventListener('change', () => trySaveBooking());
-  $('#date-input').addEventListener('change', () => trySaveBooking());
-  $('#amount-input').addEventListener('keydown', (event) => {
+  document.querySelectorAll('[data-advance-paid-by]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      advanceState.paidBy = btn.dataset.advancePaidBy;
+      document.querySelectorAll('[data-advance-paid-by]').forEach((el) => el.classList.toggle('active', el === btn));
+      trySaveAdvance();
+    });
+  });
+
+  $('#category-input').addEventListener('change', () => {
+    syncItemFields();
+    trySaveBooking();
+  });
+  $('#item-input').addEventListener('change', () => {
+    syncItemFields();
+    trySaveBooking();
+  });
+  $('#item-name-input').addEventListener('keydown', (event) => {
     if (event.key === 'Enter') {
       event.preventDefault();
       trySaveBooking();
     }
   });
-  $('#amount-input').addEventListener('blur', () => trySaveBooking());
+  $('#item-name-input').addEventListener('blur', () => trySaveBooking());
+  $('#date-input').addEventListener('change', () => trySaveBooking());
+  $('#employee-input').addEventListener('change', () => trySaveAdvance());
+  $('#advance-date-input').addEventListener('change', () => trySaveAdvance());
+
+  bindAmountCommit($('#amount-input'), trySaveBooking);
+  bindAmountCommit($('#advance-amount-input'), trySaveAdvance);
   $('#booking-form').addEventListener('submit', (event) => event.preventDefault());
+  $('#advance-form').addEventListener('submit', (event) => event.preventDefault());
+  $('#employee-form').addEventListener('submit', addEmployee);
 
   $('#booking-list').addEventListener('click', (event) => {
     const btn = event.target.closest('[data-remove]');
     if (btn) removeBooking(btn.dataset.remove);
   });
+  $('#advance-list').addEventListener('click', (event) => {
+    const btn = event.target.closest('[data-remove]');
+    if (btn) removeBooking(btn.dataset.remove);
+  });
+  $('#employee-chips').addEventListener('click', (event) => {
+    const btn = event.target.closest('[data-remove-employee]');
+    if (btn) removeEmployee(btn.dataset.removeEmployee);
+  });
 
-  $('#download-pdf').addEventListener('click', () => downloadStatementPdf(bookings));
+  $('#download-pdf').addEventListener('click', () => downloadStatementPdf(bookings, lang));
   $('#logout-btn').addEventListener('click', () => supabase.auth.signOut());
+}
+
+function resetTodayDates() {
+  const today = todayISO();
+  $('#date-input').value = today;
+  $('#advance-date-input').value = today;
 }
 
 async function showApp(nextSession) {
   session = nextSession;
-  $('#session-email').textContent = nextSession.user.email || 'Angemeldet';
-  $('#date-input').value = todayISO();
-  fillCategories();
+  $('#session-email').textContent = nextSession.user.email || t(lang, 'signed_in');
+  resetTodayDates();
   setScreen({ boot: true, setup: true, login: true, app: false });
   try {
     await loadBookings();
-    subscribeRealtime();
   } catch (error) {
-    showToast(isNetworkError(error)
-      ? 'Verbindung fehlgeschlagen. Buchungen konnten nicht geladen werden.'
-      : 'Buchungen konnten nicht geladen werden.');
+    showToast(isNetworkError(error) ? t(lang, 'load_offline') : t(lang, 'load_failed'));
   }
+  try {
+    await loadEmployees();
+  } catch {
+    employees = [];
+  }
+  renderAll();
+  subscribeRealtime();
 }
 
 function showLogin() {
   session = null;
   bookings = [];
+  employees = [];
   if (realtimeChannel) {
     supabase.removeChannel(realtimeChannel);
     realtimeChannel = null;
@@ -348,6 +627,7 @@ function showLogin() {
   $('#login-error').hidden = true;
   $('#login-form').reset();
   setScreen({ boot: true, setup: true, login: false, app: true });
+  applyLanguage();
 }
 
 async function handleLogin(event) {
@@ -362,9 +642,7 @@ async function handleLogin(event) {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) throw error;
   } catch (error) {
-    errorEl.textContent = isNetworkError(error)
-      ? 'Verbindung fehlgeschlagen. Bitte erneut versuchen.'
-      : 'Anmeldung fehlgeschlagen. E-Mail oder Passwort prüfen.';
+    errorEl.textContent = isNetworkError(error) ? t(lang, 'login_offline') : t(lang, 'login_failed');
     errorEl.hidden = false;
   } finally {
     submit.disabled = false;
@@ -372,13 +650,16 @@ async function handleLogin(event) {
 }
 
 function start() {
+  applyLanguage();
   tickClock();
   setInterval(tickClock, 1000);
   bindAppEvents();
+  resetTodayDates();
   $('#login-form').addEventListener('submit', handleLogin);
 
   if (!getSupabaseConfig().configured) {
     setScreen({ boot: true, setup: false, login: true, app: true });
+    applyLanguage();
     return;
   }
 

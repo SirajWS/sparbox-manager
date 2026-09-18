@@ -1,6 +1,7 @@
 import { formatTnd, formatTndNumber } from './money.js';
-import { paidByLabel, sortOldestFirst, summarize, typeLabel } from './bookings.js';
+import { sortOldestFirst, summarize } from './bookings.js';
 import { formatDate } from './format.js';
+import { categoryLabel, paidByLabelI18n, t, typeLabelI18n } from './i18n.js';
 
 function pdfEsc(value) {
   return String(value == null ? '' : value)
@@ -48,26 +49,28 @@ function downloadPdf(content, name) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-export function downloadStatementPdf(bookings) {
+export function downloadStatementPdf(bookings, lang = 'de') {
   const totals = summarize(bookings);
   const lines = [
-    'MixMax Manager - Kontoauszug',
-    'Erstellt: ' + formatDate(new Date().toISOString().slice(0, 10)),
-    'Aktueller Stand: ' + formatTnd(totals.balance),
-    'Einzahlungen: ' + formatTnd(totals.totalIn),
-    'Ausgaben: ' + formatTnd(totals.totalOut),
+    'MixMax Manager - ' + t(lang, 'statement_title'),
+    t(lang, 'created') + ': ' + formatDate(new Date().toISOString().slice(0, 10), lang),
+    t(lang, 'current_balance') + ': ' + formatTnd(totals.balance),
+    t(lang, 'income') + ': ' + formatTnd(totals.totalIn),
+    t(lang, 'expenses') + ': ' + formatTnd(totals.totalOut),
     '',
-    'Datum       Typ          Kategorie                 Bezahlt von   Betrag'
+    t(lang, 'col_date') + '       ' + t(lang, 'col_type') + '          ' + t(lang, 'col_category') + '                 ' + t(lang, 'col_paid_by') + '   ' + t(lang, 'col_amount')
   ];
   sortOldestFirst(bookings).forEach((booking) => {
     const sign = booking.type === 'in' ? '+' : '-';
     lines.push(
-      formatDate(booking.date).padEnd(12)
-      + typeLabel(booking.type).padEnd(13)
-      + String(booking.category || '').slice(0, 23).padEnd(25)
-      + paidByLabel(booking.paid_by).padEnd(14)
+      formatDate(booking.date, lang).padEnd(12)
+      + typeLabelI18n(lang, booking.type).padEnd(13)
+      + String(categoryLabel(lang, booking.category) || '').slice(0, 23).padEnd(25)
+      + paidByLabelI18n(lang, booking.paid_by).padEnd(14)
       + sign + formatTndNumber(booking.amount) + ' TND'
     );
+    if (booking.item) lines.push('  ' + t(lang, 'pdf_item') + ': ' + String(booking.item).slice(0, 60));
+    if (booking.employee_name) lines.push('  ' + t(lang, 'pdf_advance') + ': ' + String(booking.employee_name).slice(0, 60));
     if (booking.note) lines.push('  ' + String(booking.note).slice(0, 70));
   });
   downloadPdf(buildPdf(lines), 'MixMax-Kontoauszug-' + new Date().toISOString().slice(0, 10) + '.pdf');
