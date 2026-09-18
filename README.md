@@ -1,125 +1,135 @@
-# SparBox Manager
+# MixMax Manager
 
-Ein privater Finanzmanager als statische Webanwendung – kein Login, keine Cloud, keine schweren Frameworks. Läuft vollständig im Browser.
+Gemeinsame Finanzverwaltung für das Fastfood-Restaurant MixMax.
+Zwei Benutzer – Siraj und Chedi – sehen dasselbe Buch in TND.
 
-**🌐 Live:** [sparbox-manager.vercel.app](https://sparbox-manager.vercel.app/)
+**Vercel-Projekt:** [sparbox-manager](https://vercel.com/sirajws-projects/sparbox-manager)
 
-> **Geplante Hardware:** Raspberry Pi Zero 2 W mit motorgesteuertem Schloss. Die Hardwareanbindung folgt in einer späteren Phase; bis dahin ist die Box-Öffnung als deutlich gekennzeichnete **Simulation** ausgeführt.
-
----
-
-## ✨ Funktionen
-
-### SparBox
-| Funktion | Beschreibung |
-|---|---|
-| 💰 Einzahlung & Auszahlung | Betrag, Notiz, Schnellauswahl (1–50 €) |
-| 📊 Kontostand | Automatisch aus allen Buchungen berechnet |
-| 🎯 Sparziel | Name, Zielbetrag, Zieldatum |
-| 📈 Fortschritt | Prozentring, Meilensteine 25/50/75/100 % |
-| 🔐 Sechsstelliger PIN | Schutz der simulierten Box-Öffnung |
-| 📄 PDF-Kontoauszug | Alle Buchungen, lokal erzeugt |
-
-### Strafen-Modul
-- Strafen, Forderungen und Ratenzahlungen verwalten
-- Bezeichnung, Gläubiger, Aktenzeichen, Gesamtbetrag, Rate, Fälligkeit, Status
-- Zahlungen erfassen → Restbetrag wird automatisch neu berechnet
-- Automatisch auf „Bezahlt" setzen, wenn Restbetrag = 0
-- Zahlungsverlauf pro Strafe anzeigen
-- Fortschrittsbalken je Strafe
-- Überfällige Raten optisch hervorgehoben
-- Suche, Filter nach Status, Sortierung nach Fälligkeit / Restbetrag / Name
-- Zusammenfassung: Gesamtforderung, bezahlt, offen, monatliche Raten, überfällig
-- Strafenübersicht als PDF
-
-### Ausgaben-Modul
-- Regelmäßige und einmalige Ausgaben (Miete, Strom, Internet, Versicherung, …)
-- Kategorie, Betrag, Intervall (Einmalig / Wöchentlich / Monatlich / Vierteljährlich / Jährlich)
-- Nächste Fälligkeit, Zahlungsmethode, Notiz
-- Als bezahlt markieren, pausieren, aktivieren, löschen
-- Monatsumrechnung für vierteljährliche und jährliche Ausgaben
-- Zusammenfassung: monatliche Gesamtausgaben, bezahlt, offen, nächste Fälligkeit, Kategorienverteilung
-- Ausgaben als PDF
-
-### Übersicht (Finanzüberblick)
-Kompakter Bereich mit: SparBox-Stand, offene Forderungen, monatliche Strafraten, monatliche Ausgaben, nächste Zahlung, Anzahl überfälliger Zahlungen.
+Phase 1 speichert Buchungen dauerhaft in Supabase. Es gibt kein Kassensystem, keine Offline-Warteschlange und kein Rollenmodell.
 
 ---
 
-## ⚠️ Datenspeicherung
+## Was die App kann
 
-Alle Daten werden **ausschließlich lokal im Browser** gespeichert (`localStorage`).
+- Login mit E-Mail + Passwort (Supabase Auth, keine öffentliche Registrierung)
+- Eine gemeinsame Tabelle `bookings` als einzige Quelle der Wahrheit
+- Schnellerfassung ohne Speichern-Button (Abschluss per letztem Pflichtfeld / Enter / Blur)
+- Übersicht: Einzahlungen, Ausgaben, aktueller Stand, von Siraj/Chedi bezahlte Ausgaben
+- Buchungsliste mit Entfernen
+- Ware / Einkauf mit auswählbarem Artikel (Liste in `src/lib/catalog.js`)
+- Mitarbeiterliste in Supabase; Vorschüsse als Personal-Ausgaben im selben Ledger
+- Deutsch / English mit Umschalter unter Einstellungen
+- Kontoauszug inkl. einfachem PDF
+- Optional Realtime: INSERT/DELETE erscheinen beim anderen Gerät ohne Reload
 
-- Jeder Nutzer hat seinen eigenen, unabhängigen Datenstand.
-- Keine Synchronisation zwischen Geräten oder Browsern.
-- Strafen und Ausgaben sind getrennt von SparBox-Buchungen gespeichert.
-- Eine Strafe oder Ausgabe zu erfassen **verändert nicht** den SparBox-Kontostand.
+Alte SparBox-Daten in `localStorage` werden **nicht** importiert und nicht angezeigt.
 
 ---
 
-## 🚀 Lokaler Start
+## Lokal starten
+
+1. Node.js 20+ installieren
+2. `.env.example` nach `.env` kopieren und Werte eintragen:
+
+```
+VITE_SUPABASE_URL=
+VITE_SUPABASE_ANON_KEY=
+```
+
+3. Abhängigkeiten und Dev-Server:
 
 ```bash
-python3 -m http.server 8080 --directory dist
+npm install
+npm run dev
 ```
 
-Dann [http://localhost:8080](http://localhost:8080) öffnen. Kein Build-Schritt nötig.
+4. Tests:
 
-**Test-PIN:** `258014`
-
----
-
-## 🌐 Veröffentlichung über Vercel
-
-### Import in Vercel
-
-1. Auf [vercel.com](https://vercel.com) einloggen (kostenloser Account reicht)
-2. **„Add New Project"** → **„Import Git Repository"**
-3. Das Repository `SirajWS/sparbox-manager` auswählen
-4. Einstellungen:
-   - **Framework Preset:** `Other`
-   - **Root Directory:** *(leer lassen – Standardwert)*
-   - **Output Directory:** `dist` *(wird aus `vercel.json` automatisch gelesen)*
-   - **Build Command:** *(leer lassen)*
-   - **Install Command:** *(leer lassen)*
-5. **„Deploy"** klicken
-
-Vercel liest `vercel.json` automatisch. Nach dem ersten Deploy erscheint ein öffentlicher Link (z. B. `sparbox-manager-xyz.vercel.app`). Bei jedem Push auf `main` wird automatisch neu deployt.
-
-> **Hinweis:** Die `vercel.json` ist so konfiguriert, dass alle Routen auf `dist/index.html` zeigen – direkte URL-Aufrufe führen also nicht zu einem 404-Fehler.
-
----
-
-## 🔧 GitHub Pages (alternativ)
-
-Das Repository enthält auch einen GitHub-Actions-Workflow (`.github/workflows/deploy.yml`), der `dist/` auf GitHub Pages deployt. Aktivieren unter **Settings → Pages → Source: GitHub Actions**.
-
----
-
-## 📁 Projektstruktur
-
+```bash
+npm test
 ```
-sparbox-manager/
-├── dist/
-│   ├── index.html      # Einzige HTML-Datei (SPA)
-│   ├── styles.css      # Komplettes Stylesheet
-│   └── app.js          # Gesamte Anwendungslogik
-├── .github/
-│   └── workflows/
-│       └── deploy.yml  # GitHub Actions → GitHub Pages
-├── vercel.json         # Vercel-Konfiguration
-├── .gitignore
-└── README.md
+
+Build:
+
+```bash
+npm run build
 ```
 
 ---
 
-## 🔮 Geplante Erweiterungen
+## Environment Variables
 
-- [ ] Raspberry Pi Zero 2 W Hardwareanbindung (GPIO, Motorsteuerung)
-- [ ] Geräteübergreifende Datensynchronisation
-- [ ] Push-Benachrichtigungen bei Transaktionen
+Nur Frontend-Werte, **keine** Service-Role-Keys, **keine** Passwörter.
+
+| Variable | Wo setzen | Bedeutung |
+|---|---|---|
+| `VITE_SUPABASE_URL` | lokale `.env` und Vercel | Projekt-URL aus Supabase → Settings → API |
+| `VITE_SUPABASE_ANON_KEY` | lokale `.env` und Vercel | `anon` / `public` Key aus Supabase → Settings → API |
+
+In Vercel: Project → Settings → Environment Variables, für Production (und Preview). Danach neu deployen.
 
 ---
 
-*Erstellt von [SirajWS](https://github.com/SirajWS)*
+## Supabase manuell einrichten
+
+Die App legt das Projekt nicht selbst an.
+
+1. Supabase-Projekt erstellen
+2. Authentication → Providers: **Email** aktiv, **Confirm email** nach Bedarf
+3. Authentication → Providers: öffentliche Registrierung **deaktivieren** (Disable sign ups)
+4. Zwei Benutzer manuell anlegen: Siraj und Chedi (Authentication → Users → Add user)
+5. SQL aus [`supabase/schema.sql`](supabase/schema.sql) im SQL Editor ausführen
+   - Tabelle `bookings`
+   - Constraints, Indexe
+   - Trigger für `created_by`
+   - Row Level Security
+   - Realtime-Publication
+   - Phase 1.1: optionale Spalten `item`, `booking_kind`, `employee_name`
+   - Phase 1.2: Tabelle `employees`
+6. Realtime: Tables `bookings` und `employees` müssen in `supabase_realtime` stehen (macht das SQL)
+
+Wenn `bookings` schon existiert und nur die Mitarbeiterliste fehlt: [`supabase/migrations/phase-1-2-employees.sql`](supabase/migrations/phase-1-2-employees.sql) ausführen. Das ändert keine Buchungen.
+
+Kein Google-Login. Keine Passwörter in Git.
+
+Artikel- und Mitarbeiterlisten stehen zentral in `src/lib/catalog.js` und können später ergänzt werden, ohne das Datenmodell zu ändern.
+
+---
+
+## Vercel
+
+1. Repository importieren oder bestehendes Projekt [sparbox-manager](https://vercel.com/sirajws-projects/sparbox-manager) verwenden
+2. Framework: Vite (oder Other mit Build `npm run build`, Output `dist`)
+3. Variablen `VITE_SUPABASE_URL` und `VITE_SUPABASE_ANON_KEY` setzen
+4. Deploy
+
+`vercel.json` setzt Build-Command, Output-Directory und SPA-Rewrites.
+
+---
+
+## Projektstruktur
+
+```
+├── index.html
+├── src/
+│   ├── main.js
+│   ├── styles.css
+│   └── lib/          # TND, bookings-Logik, PDF, Supabase-Client
+├── supabase/schema.sql
+├── .env.example
+├── vite.config.js
+└── vercel.json
+```
+
+---
+
+## Nächste kleine Schritte (nicht Phase 1.1)
+
+- Endgültige Artikelliste in `src/lib/catalog.js` ergänzen
+- PDF mehrseitig, wenn sehr viele Buchungen auf eine Seite nicht mehr passen
+- Buchung nachträglich bearbeiten (UPDATE ist per RLS schon erlaubt, in der UI noch nicht)
+- Filter in der Buchungsliste
+
+---
+
+*Früher SparBox Manager. Alte localStorage-Ledger, Sparziele, Strafen, PIN und Geldfach-Simulation sind entfernt.*

@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="theme-color" content="#102238" />
+  <title>MixMax Manager</title>
+  <meta name="description" content="Shared finance manager for MixMax." />
+</head>
+<body>
+  <div id="boot" class="boot" data-i18n="loading">MixMax Manager wird geladen…</div>
+
+  <section id="setup-screen" class="auth-screen" hidden>
+    <article class="auth-card">
+      <span class="brand-mark">M</span>
+      <h1>MixMax Manager</h1>
+      <p data-i18n="setup_title">Supabase ist noch nicht konfiguriert.</p>
+      <p class="muted" data-i18n="setup_hint">Setze lokal in .env und in Vercel die Variablen VITE_SUPABASE_URL und VITE_SUPABASE_ANON_KEY. Vorlagen stehen in .env.example.</p>
+    </article>
+  </section>
+
+  <section id="login-screen" class="auth-screen" hidden>
+    <article class="auth-card">
+      <span class="brand-mark">M</span>
+      <h1>MixMax Manager</h1>
+      <p data-i18n="login_intro">Bitte anmelden, um das gemeinsame Buch zu sehen.</p>
+      <form id="login-form">
+        <label><span data-i18n="email">E-Mail</span>
+          <input id="login-email" type="email" autocomplete="username" required />
+        </label>
+        <label><span data-i18n="password">Passwort</span>
+          <input id="login-password" type="password" autocomplete="current-password" required />
+        </label>
+        <p id="login-error" class="form-error" hidden></p>
+        <button class="primary full" type="submit" id="login-submit" data-i18n="sign_in">Anmelden</button>
+      </form>
+    </article>
+  </section>
+
+  <div id="app" class="shell" hidden>
+    <aside class="sidebar" id="sidebar">
+      <a class="brand" href="#overview" id="brand-link"><span class="brand-mark">M</span><span>MixMax Manager</span></a>
+      <nav data-i18n-aria="nav_main" aria-label="Hauptnavigation">
+        <button class="nav-item active" data-view="overview"><span aria-hidden="true">⌂</span> <span data-i18n="nav_overview">Übersicht</span></button>
+        <button class="nav-item" data-view="bookings"><span aria-hidden="true">↕</span> <span data-i18n="nav_bookings">Buchungen</span></button>
+        <button class="nav-item" data-view="employees"><span aria-hidden="true">●</span> <span data-i18n="nav_employees">Mitarbeiter</span></button>
+        <button class="nav-item" data-view="statement"><span aria-hidden="true">▤</span> <span data-i18n="nav_statement">Kontoauszug</span></button>
+        <button class="nav-item" data-view="settings"><span aria-hidden="true">⚙</span> <span data-i18n="nav_settings">Einstellungen</span></button>
+      </nav>
+      <div class="device-card">
+        <span class="status-dot"></span>
+        <div><strong data-i18n="shared_ledger">Gemeinsames Buch</strong><small data-i18n="shared_ledger_sub">Siraj &amp; Chedi · TND</small></div>
+      </div>
+    </aside>
+
+    <main>
+      <header class="topbar">
+        <button class="menu" id="menu-btn" data-i18n-aria="menu" aria-label="Menü öffnen">☰</button>
+        <div><p class="eyebrow" id="today-label"></p><h1 id="view-title">Übersicht</h1></div>
+        <div class="clock"><strong id="clock-time">--:--</strong><span id="clock-date">--.--.----</span></div>
+      </header>
+
+      <section class="view active" id="view-overview">
+        <div class="hero-grid">
+          <article class="balance-card">
+            <div class="card-head"><span data-i18n="current_balance">Aktueller Stand</span><span class="private-badge">TND</span></div>
+            <div class="balance" id="balance-value">0,000 TND</div>
+            <p class="balance-sub" data-i18n="income_minus_expenses">Einzahlungen minus Ausgaben</p>
+          </article>
+          <article class="panel summary-panel">
+            <span class="eyebrow" data-i18n="summary">Auswertung</span>
+            <h2 data-i18n="shared_ledger">Gemeinsames Buch</h2>
+            <div class="summary-grid">
+              <div><small data-i18n="total_income">Gesamte Einzahlungen</small><strong id="sum-in">0,000 TND</strong></div>
+              <div><small data-i18n="total_expenses">Gesamte Ausgaben</small><strong id="sum-out" class="col-red">0,000 TND</strong></div>
+              <div><small data-i18n="paid_by_siraj">Von Siraj bezahlt</small><strong id="sum-siraj">0,000 TND</strong></div>
+              <div><small data-i18n="paid_by_chedi">Von Chedi bezahlt</small><strong id="sum-chedi">0,000 TND</strong></div>
+            </div>
+          </article>
+        </div>
+
+        <article class="panel recent-panel">
+          <div class="panel-head">
+            <div><span class="eyebrow" data-i18n="recent_activity">Verlauf</span><h2 data-i18n="recent_bookings">Letzte Buchungen</h2></div>
+            <button class="text-button" data-view-jump="bookings" data-i18n="view_all">Alle anzeigen →</button>
+          </div>
+          <div class="transaction-list" id="recent-bookings"></div>
+        </article>
+      </section>
+
+      <section class="view" id="view-bookings">
+        <article class="panel form-panel booking-form-card">
+          <span class="eyebrow" data-i18n="quick_entry">Schnell erfassen</span>
+          <h2 data-i18n="new_booking">Neue Buchung</h2>
+          <form id="booking-form" autocomplete="off">
+            <div class="field">
+              <span class="field-label" data-i18n="type">Typ</span>
+              <div class="choice-row" role="group" data-i18n-aria="type" aria-label="Typ">
+                <button type="button" class="choice active" data-type="out" data-i18n="type_out">Ausgabe</button>
+                <button type="button" class="choice" data-type="in" data-i18n="type_in">Einzahlung</button>
+              </div>
+            </div>
+            <label class="field"><span data-i18n="amount">Betrag</span>
+              <input id="amount-input" inputmode="decimal" autocomplete="off" data-i18n-placeholder="amount_placeholder" placeholder="z. B. 85,500" />
+            </label>
+            <label class="field"><span data-i18n="category">Kategorie</span>
+              <select id="category-input"></select>
+            </label>
+            <label class="field" id="item-field" hidden><span data-i18n="item">Artikel</span>
+              <select id="item-input"></select>
+            </label>
+            <label class="field field-span" id="item-name-field" hidden><span data-i18n="item_name">Artikelname</span>
+              <input id="item-name-input" maxlength="60" data-i18n-placeholder="item_name_placeholder" placeholder="z. B. Mayonnaise" />
+            </label>
+            <label class="field"><span data-i18n="date">Datum</span>
+              <input id="date-input" type="date" required />
+            </label>
+            <div class="field field-span">
+              <span class="field-label" data-i18n="paid_by">Bezahlt von</span>
+              <div class="choice-row three" role="group" data-i18n-aria="paid_by" aria-label="Bezahlt von">
+                <button type="button" class="choice" data-paid-by="siraj" data-i18n="paid_siraj">Siraj</button>
+                <button type="button" class="choice" data-paid-by="chedi" data-i18n="paid_chedi">Chedi</button>
+                <button type="button" class="choice" data-paid-by="other" data-i18n="paid_other">Andere</button>
+              </div>
+            </div>
+            <label class="field field-span"><span data-i18n="note">Beschreibung / Notiz</span>
+              <input id="note-input" maxlength="120" data-i18n-placeholder="note_optional" placeholder="optional" />
+            </label>
+            <p id="booking-error" class="form-error field-span" hidden></p>
+            <p class="form-hint field-span" data-i18n="booking_hint">Kein Speichern-Button: Die Buchung wird gespeichert, sobald alle Pflichtfelder stehen – beim Betrag erst mit Enter oder wenn das Feld verlassen wird.</p>
+          </form>
+        </article>
+
+        <article class="panel">
+          <div class="panel-head">
+            <div><span class="eyebrow" data-i18n="ledger">Buch</span><h2 data-i18n="saved_bookings">Gespeicherte Buchungen</h2></div>
+          </div>
+          <div id="booking-list" class="booking-list"></div>
+        </article>
+      </section>
+
+      <section class="view" id="view-employees">
+        <article class="panel form-panel">
+          <span class="eyebrow" data-i18n="employees_eyebrow">Personal</span>
+          <h2 data-i18n="manage_employees">Mitarbeiter verwalten</h2>
+          <form id="employee-form" class="employee-manage" autocomplete="off">
+            <label class="field"><span data-i18n="employee_name">Mitarbeitername</span>
+              <input id="employee-name-input" maxlength="60" data-i18n-placeholder="employee_name_placeholder" placeholder="z. B. Ahmed" />
+            </label>
+            <button class="primary" type="submit" data-i18n="add">Hinzufügen</button>
+          </form>
+          <p id="employee-error" class="form-error" hidden></p>
+          <p class="form-hint" data-i18n="add_employee_hint">Siraj und Chedi sehen dieselbe Liste. Chedi und Siraj sind nicht automatisch Mitarbeiter.</p>
+          <div id="employee-chips" class="employee-chips"></div>
+        </article>
+
+        <article class="panel form-panel booking-form-card">
+          <span class="eyebrow" data-i18n="employees_eyebrow">Personal</span>
+          <h2 data-i18n="record_advance">Vorschuss erfassen</h2>
+          <p id="no-employees-hint" class="form-hint" hidden data-i18n="no_employees">Noch keine Mitarbeiter. Füge zuerst einen Mitarbeiter hinzu.</p>
+          <form id="advance-form" autocomplete="off">
+            <label class="field"><span data-i18n="employee">Mitarbeiter</span>
+              <select id="employee-input"></select>
+            </label>
+            <label class="field"><span data-i18n="amount">Betrag</span>
+              <input id="advance-amount-input" inputmode="decimal" autocomplete="off" data-i18n-placeholder="advance_amount_placeholder" placeholder="z. B. 100,000" />
+            </label>
+            <label class="field"><span data-i18n="date">Datum</span>
+              <input id="advance-date-input" type="date" required />
+            </label>
+            <div class="field field-span">
+              <span class="field-label" data-i18n="paid_by">Bezahlt von</span>
+              <div class="choice-row three" role="group" data-i18n-aria="paid_by" aria-label="Bezahlt von">
+                <button type="button" class="choice" data-advance-paid-by="siraj" data-i18n="paid_siraj">Siraj</button>
+                <button type="button" class="choice" data-advance-paid-by="chedi" data-i18n="paid_chedi">Chedi</button>
+                <button type="button" class="choice" data-advance-paid-by="other" data-i18n="paid_other">Andere</button>
+              </div>
+            </div>
+            <label class="field field-span"><span data-i18n="advance_note">Notiz</span>
+              <input id="advance-note-input" maxlength="120" data-i18n-placeholder="note_optional" placeholder="optional" />
+            </label>
+            <p id="advance-error" class="form-error field-span" hidden></p>
+            <p class="form-hint field-span" data-i18n="advance_hint">Ein Vorschuss ist eine normale Personal-Ausgabe im gemeinsamen Buch. Speichern wie bei Buchungen: letztes Pflichtfeld, Enter oder Betragsfeld verlassen.</p>
+          </form>
+        </article>
+
+        <article class="panel">
+          <div class="panel-head">
+            <div><span class="eyebrow" data-i18n="summary">Auswertung</span><h2 data-i18n="advances_by_employee">Vorschüsse je Mitarbeiter</h2></div>
+          </div>
+          <div id="employee-summary" class="summary-grid employee-summary"></div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-head">
+            <div><span class="eyebrow" data-i18n="history">Historie</span><h2 data-i18n="saved_advances">Gespeicherte Vorschüsse</h2></div>
+          </div>
+          <div id="advance-list" class="booking-list"></div>
+        </article>
+      </section>
+
+      <section class="view" id="view-statement">
+        <div class="page-actions">
+          <div><p data-i18n="statement_intro">Chronologische Historie aller MixMax-Buchungen in TND.</p></div>
+          <button class="primary" id="download-pdf" type="button" data-i18n="statement_pdf">Kontoauszug PDF</button>
+        </div>
+        <article class="statement-preview" id="statement-preview"></article>
+      </section>
+
+      <section class="view" id="view-settings">
+        <div class="two-col">
+          <article class="panel form-panel">
+            <span class="eyebrow" data-i18n="language">Sprache</span>
+            <h2 data-i18n="language">Sprache</h2>
+            <div class="choice-row" role="group" data-i18n-aria="language" aria-label="Sprache">
+              <button type="button" class="choice" data-lang="de" data-i18n="language_de">Deutsch</button>
+              <button type="button" class="choice" data-lang="en" data-i18n="language_en">English</button>
+            </div>
+          </article>
+          <article class="panel form-panel">
+            <span class="eyebrow" data-i18n="account">Konto</span>
+            <h2 data-i18n="signed_in">Angemeldet</h2>
+            <p id="session-email" class="muted"></p>
+            <button class="secondary" id="logout-btn" type="button" data-i18n="sign_out">Abmelden</button>
+          </article>
+        </div>
+        <article class="panel form-panel">
+          <span class="eyebrow" data-i18n="data">Daten</span>
+          <h2 data-i18n="shared_ledger">Gemeinsames Buch</h2>
+          <p data-i18n="settings_ledger">Quelle der Wahrheit ist die Supabase-Tabelle bookings. Vorschüsse sind Personal-Ausgaben in derselben Tabelle. Alte SparBox-Daten im Browser werden nicht verwendet.</p>
+          <p class="muted" data-i18n="settings_currency">Währung: Tunesischer Dinar (TND), 3 Nachkommastellen.</p>
+        </article>
+      </section>
+    </main>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
