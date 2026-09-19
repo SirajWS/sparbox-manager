@@ -2,17 +2,22 @@ import { describe, expect, it } from 'vitest';
 import {
   applyDelete,
   applyInsert,
+  availableYears,
   bookingFingerprint,
   bookingKindOf,
   bookingTitle,
   canStartSave,
   categoriesForType,
   employeeAdvanceSummaries,
+  filterStaffPayments,
   isFormComplete,
   resolveItem,
+  staffKindTotals,
+  staffYearMonths,
   summarize,
   toAdvancePayload,
-  toNormalPayload
+  toNormalPayload,
+  toStaffPaymentPayload
 } from './bookings.js';
 import { CUSTOM_ITEM, PURCHASE_CATEGORY, PURCHASE_ITEMS } from './catalog.js';
 
@@ -203,5 +208,89 @@ describe('bookings source of truth', () => {
     expect(bookingKindOf(legacy[0])).toBe('normal');
     expect(resolveItem({ type: 'out', category: 'Miete' })).toBe(null);
     expect(bookingTitle(legacy[0])).toBe('Miete');
+  });
+});
+
+describe('staff payments', () => {
+  const forms = {
+    salary: { bookingKind: 'salary', amount: 800, employeeName: 'Ahmed', date: '2026-03-10', paidBy: 'chedi', note: '' },
+    advance: { bookingKind: 'employee_advance', amount: 100, employeeName: 'Ahmed', date: '2026-03-12', paidBy: 'siraj', note: '' },
+    tip: { bookingKind: 'tip', amount: 20, employeeName: 'Ahmed', date: '2026-04-01', paidBy: 'other', note: 'service' },
+    other: { bookingKind: 'other_staff', amount: 15, employeeName: 'Sara', date: '2026-04-02', paidBy: 'chedi', note: '' }
+  };
+
+  it('maps salary, advance, tip and other_staff as single Personal out bookings', () => {
+    expect(toStaffPaymentPayload(forms.salary)).toMatchObject({
+      type: 'out',
+      category: 'Personal',
+      item: null,
+      booking_kind: 'salary',
+      employee_name: 'Ahmed',
+      paid_by: 'chedi'
+    });
+    expect(toStaffPaymentPayload(forms.advance).booking_kind).toBe('employee_advance');
+    expect(toStaffPaymentPayload(forms.tip)).toMatchObject({
+      booking_kind: 'tip',
+      note: 'Trinkgeld – Ahmed: service'
+    });
+    expect(toStaffPaymentPayload(forms.other).booking_kind).toBe('other_staff');
+    expect(toAdvancePayload(forms.advance).booking_kind).toBe('employee_advance');
+  });
+
+  it('does not double-count staff payments in dashboard totals', () => {
+    const ledger = [
+      { id: 'n1', type: 'out', amount: 40, paid_by: 'siraj', booking_kind: 'normal', category: 'Miete' },
+      { id: 's1', type: 'out', amount: 800, paid_by: 'chedi', booking_kind: 'salary', category: 'Personal', employee_name: 'Ahmed', date: '2026-03-10' },
+      { id: 'a1', type: 'out', amount: 100, paid_by: 'siraj', booking_kind: 'employee_advance', category: 'Personal', employee_name: 'Ahmed', date: '2026-03-12' },
+      { id: 't1', type: 'out', amount: 20, paid_by: 'other', booking_kind: 'tip', category: 'Personal', employee_name: 'Ahmed', date: '2026-04-01' },
+      { id: 'o1', type: 'out', amount: 15, paid_by: 'chedi', booking_kind: 'other_staff', category: 'Personal', employee_name: 'Sara', date: '2026-04-02' }
+    ];
+    const totals = summarize(ledger);
+    expect(totals.totalOut).toBe(975);
+    expect(totals.paidByChedi).toBe(815);
+    expect(totals.paidBySiraj).toBe(140);
+    const kinds = staffKindTotals(ledger);
+    expect(kinds.salary).toBe(800);
+    expect(kinds.employee_advance).toBe(100);
+    expect(kinds.tip).toBe(20);
+    expect(kinds.other_staff).toBe(15);
+    expect(kinds.total).toBe(935);
+  });
+
+  it('aggregates 12 months including empty months and filters by employee/year', () => {
+    const ledger = [
+      { id: 's1', type: 'out', amount: 800, paid_by: 'chedi', booking_kind: 'salary', employee_name: 'Ahmed', date: '2026-03-10' },
+      { id: 'a1', type: 'out', amount: 100, paid_by: 'siraj', booking_kind: 'employee_advance', employee_name: 'Ahmed', date: '2026-03-12' },
+      { id: 't1', type: 'out', amount: 20, paid_by: 'other', booking_kind: 'tip', employee_name: 'Ahmed', date: '2025-04-01' },
+      { id: 'o1', type: 'out', amount: 15, paid_by: 'chedi', booking_kind: 'other_staff', employee_name: 'Sara', date: '2026-04-02' }
+    ];
+    const months = staffYearMonths(ledger, 'Ahmed', 2026);
+    expect(months).toHaveLength(12);
+    expect(months[0]).toMatchObject({ month: 1, total: 0, salary: 0 });
+    expect(months[2]).toMatchObject({ month: 3, salary: 800, employee_advance: 100, total: 900 });
+    expect(months[3].total).toBe(0);
+    expect(filterStaffPayments(ledger, { employeeName: 'Ahmed', year: 2026 })).toHaveLength(2);
+    expect(filterStaffPayments(ledger, { employeeName: 'Ahmed', year: 2026, month: 3 })).toHaveLength(2);
+    expect(availableYears(ledger, new Date('2026-09-19'))).toEqual([2026, 2025]);
+  });
+
+  it('keeps normal bookings working next to staff payments', () => {
+    const purchase = toNormalPayload({
+      type: 'out',
+      amount: 38,
+      category: 'Ware / Einkauf',
+      item: 'Vanille-Sticks',
+      date: '2026-09-17',
+      paidBy: 'chedi',
+      note: '4 Stück'
+    });
+    expect(purchase).toMatchObject({
+      booking_kind: 'normal',
+      employee_name: null,
+      item: 'Vanille-Sticks'
+    });
+    expect(isFormComplete({ ...forms.salary, employeeName: '' })).toBe(false);
+    expect(isFormComplete(forms.tip)).toBe(true);
+    expect(bookingKindOf({ booking_kind: 'salary' })).toBe('salary');
   });
 });

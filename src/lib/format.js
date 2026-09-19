@@ -19,7 +19,7 @@ export function todayISO() {
 export function formatDate(iso, lang = 'de') {
   if (!iso) return '–';
   try {
-    const locale = lang === 'en' ? 'en-GB' : 'de-DE';
+    const locale = lang === 'en' ? 'en-GB' : lang === 'fr' ? 'fr-FR' : 'de-DE';
     return new Intl.DateTimeFormat(locale, {
       day: '2-digit',
       month: '2-digit',

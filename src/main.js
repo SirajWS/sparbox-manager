@@ -3,19 +3,24 @@ import { createSupabase, getSupabaseConfig } from './lib/supabaseClient.js';
 import {
   applyDelete,
   applyInsert,
+  availableYears,
   bookingFingerprint,
   bookingTitle,
   canStartSave,
   categoriesForType,
-  employeeAdvanceSummaries,
-  employeeAdvances,
+  filterStaffPayments,
   isFormComplete,
   needsCustomItemName,
   runningBalances,
   sortNewestFirst,
+  staffEmployeeNames,
+  staffKindTotals,
+  staffPaymentSummaries,
+  staffPayments,
+  staffYearMonths,
   summarize,
-  toAdvancePayload,
-  toNormalPayload
+  toNormalPayload,
+  toStaffPaymentPayload
 } from './lib/bookings.js';
 import {
   applyEmployeeDelete,
@@ -26,15 +31,18 @@ import {
 import { CUSTOM_ITEM, PURCHASE_CATEGORY, PURCHASE_ITEMS } from './lib/catalog.js';
 import { formatTnd, parseAmount } from './lib/money.js';
 import { esc, formatDate, isNetworkError, todayISO } from './lib/format.js';
-import { downloadStatementPdf } from './lib/pdf.js';
+import { downloadStaffPdf, downloadStatementPdf } from './lib/pdf.js';
+import { renderStaffChartHtml } from './lib/staffChart.js';
 import {
   applyStaticI18n,
   categoryLabel,
   itemLabel,
   loadLanguage,
   localeFor,
+  monthLongLabel,
   paidByLabelI18n,
   saveLanguage,
+  staffKindLabel,
   t,
   typeLabelI18n
 } from './lib/i18n.js';
@@ -60,6 +68,9 @@ let realtimeChannel = null;
 let savingLock = false;
 let inFlightFingerprint = null;
 let currentView = 'overview';
+let staffFilterEmployee = '';
+let staffFilterYear = new Date().getFullYear();
+let staffFilterMonth = '';
 
 const formState = {
   type: 'out',
@@ -149,7 +160,7 @@ function fillEmployees() {
   $('#advance-amount-input').disabled = !hasEmployees;
   $('#advance-date-input').disabled = !hasEmployees;
   $('#advance-note-input').disabled = !hasEmployees;
-  document.querySelectorAll('[data-advance-paid-by]').forEach((btn) => { btn.disabled = !hasEmployees; });
+  document.querySelectorAll('[data-advance-paid-by], [data-staff-kind]').forEach((btn) => { btn.disabled = !hasEmployees; });
   if (!hasEmployees) {
     select.innerHTML = `<option value="">${esc(t(lang, 'no_employees'))}</option>`;
     return;
@@ -185,7 +196,7 @@ function readBookingForm() {
 
 function readAdvanceForm() {
   return {
-    bookingKind: 'employee_advance',
+    bookingKind: advanceState.bookingKind,
     employeeName: advanceState.employeeName,
     amount: advanceState.amount,
     date: advanceState.date,
@@ -206,7 +217,14 @@ function bookingRow(booking, compact = false) {
   const remove = compact ? '' : `<button type="button" class="text-button danger" data-remove="${esc(booking.id)}">${esc(t(lang, 'remove'))}</button>`;
   const title = booking.item
     ? `${categoryLabel(lang, booking.category)} · ${itemLabel(lang, booking.item)}`
-    : bookingTitle(booking, { advance: t(lang, 'advance_label'), employee: t(lang, 'employee') });
+    : bookingTitle(booking, {
+      salary: staffKindLabel(lang, 'salary'),
+      employee_advance: staffKindLabel(lang, 'employee_advance'),
+      tip: staffKindLabel(lang, 'tip'),
+      other_staff: staffKindLabel(lang, 'other_staff'),
+      advance: t(lang, 'advance_label'),
+      employee: t(lang, 'employee')
+    });
   return `<article class="booking-item">
     <div class="booking-copy">
       <strong>${esc(title)}</strong>
@@ -246,24 +264,72 @@ function renderEmployeeChips() {
     : '';
 }
 
+function syncStaffFilters() {
+  const names = staffEmployeeNames(bookings, employees);
+  if (!names.includes(staffFilterEmployee)) staffFilterEmployee = names[0] || '';
+  const years = availableYears(bookings);
+  if (!years.includes(Number(staffFilterYear))) staffFilterYear = years[0];
+
+  const employeeSelect = $('#staff-employee-filter');
+  employeeSelect.innerHTML = names.length
+    ? names.map((name) => `<option value="${esc(name)}">${esc(name)}</option>`).join('')
+    : `<option value="">${esc(t(lang, 'no_employees'))}</option>`;
+  employeeSelect.value = staffFilterEmployee;
+  employeeSelect.disabled = !names.length;
+
+  const yearSelect = $('#staff-year-filter');
+  yearSelect.innerHTML = years.map((year) => `<option value="${year}">${year}</option>`).join('');
+  yearSelect.value = String(staffFilterYear);
+
+  const monthSelect = $('#staff-month-filter');
+  monthSelect.innerHTML = `<option value="">${esc(t(lang, 'whole_year'))}</option>`
+    + Array.from({ length: 12 }, (_, i) => {
+      const month = i + 1;
+      const value = String(month).padStart(2, '0');
+      return `<option value="${value}">${esc(monthLongLabel(lang, month))}</option>`;
+    }).join('');
+  monthSelect.value = staffFilterMonth;
+  $('#staff-pdf-btn').disabled = !staffFilterEmployee;
+}
+
 function renderEmployees() {
   fillEmployees();
   renderEmployeeChips();
-  const summaries = employeeAdvanceSummaries(bookings, employees);
+  syncStaffFilters();
+
+  const yearRows = filterStaffPayments(bookings, {
+    employeeName: staffFilterEmployee,
+    year: staffFilterYear
+  });
+  const totals = staffKindTotals(yearRows);
+  $('#staff-kind-totals').innerHTML = staffFilterEmployee
+    ? `
+      <div><small>${esc(staffKindLabel(lang, 'salary'))}</small><strong>${formatTnd(totals.salary)}</strong></div>
+      <div><small>${esc(staffKindLabel(lang, 'employee_advance'))}</small><strong>${formatTnd(totals.employee_advance)}</strong></div>
+      <div><small>${esc(staffKindLabel(lang, 'tip'))}</small><strong>${formatTnd(totals.tip)}</strong></div>
+      <div><small>${esc(staffKindLabel(lang, 'other_staff'))}</small><strong>${formatTnd(totals.other_staff)}</strong></div>
+      <div class="total-cell"><small>${esc(t(lang, 'total'))}</small><strong>${formatTnd(totals.total)}</strong></div>
+    `
+    : `<div class="empty">${esc(t(lang, 'no_staff_payments'))}</div>`;
+
+  const months = staffYearMonths(bookings, staffFilterEmployee, staffFilterYear);
+  $('#staff-chart').innerHTML = renderStaffChartHtml(months, lang, formatTnd);
+
+  const summaries = staffPaymentSummaries(bookings, employees);
   $('#employee-summary').innerHTML = summaries.length
     ? summaries.map((row) => `
         <div>
           <small>${esc(row.name)}</small>
           <strong>${formatTnd(row.total)}</strong>
-          <small>${row.last ? esc(t(lang, 'last_advance', { date: formatDate(row.last.date, lang) })) : esc(t(lang, 'no_advance_yet'))}</small>
+          <small>${row.last ? esc(t(lang, 'last_staff_payment', { date: formatDate(row.last.date, lang) })) : esc(t(lang, 'no_staff_payment_yet'))}</small>
         </div>
       `).join('')
     : `<div class="empty">${esc(t(lang, 'no_employees'))}</div>`;
 
-  const rows = employeeAdvances(bookings);
+  const rows = staffPayments(bookings);
   $('#advance-list').innerHTML = rows.length
     ? rows.map((row) => bookingRow(row)).join('')
-    : `<div class="empty">${esc(t(lang, 'no_advances'))}</div>`;
+    : `<div class="empty">${esc(t(lang, 'no_staff_payments'))}</div>`;
 }
 
 function renderStatement() {
@@ -432,7 +498,7 @@ async function trySaveAdvance() {
   const form = readAdvanceForm();
   setFormError('#advance-error', '');
   try {
-    await insertBooking(form, toAdvancePayload(form), () => {
+    await insertBooking(form, toStaffPaymentPayload(form), () => {
       $('#advance-amount-input').value = '';
       $('#advance-note-input').value = '';
       showToast(t(lang, 'saved', { amount: formatTnd(form.amount) }));
@@ -547,6 +613,34 @@ function bindAppEvents() {
       document.querySelectorAll('[data-advance-paid-by]').forEach((el) => el.classList.toggle('active', el === btn));
       trySaveAdvance();
     });
+  });
+
+  document.querySelectorAll('[data-staff-kind]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      advanceState.bookingKind = btn.dataset.staffKind;
+      document.querySelectorAll('[data-staff-kind]').forEach((el) => el.classList.toggle('active', el === btn));
+      trySaveAdvance();
+    });
+  });
+
+  $('#staff-employee-filter').addEventListener('change', () => {
+    staffFilterEmployee = $('#staff-employee-filter').value;
+    renderEmployees();
+  });
+  $('#staff-year-filter').addEventListener('change', () => {
+    staffFilterYear = Number($('#staff-year-filter').value);
+    renderEmployees();
+  });
+  $('#staff-month-filter').addEventListener('change', () => {
+    staffFilterMonth = $('#staff-month-filter').value;
+  });
+  $('#staff-pdf-btn').addEventListener('click', () => {
+    if (!staffFilterEmployee) return;
+    downloadStaffPdf(bookings, {
+      employeeName: staffFilterEmployee,
+      year: staffFilterYear,
+      month: staffFilterMonth || null
+    }, lang);
   });
 
   $('#category-input').addEventListener('change', () => {

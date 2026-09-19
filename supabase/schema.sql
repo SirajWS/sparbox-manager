@@ -1,9 +1,9 @@
--- MixMax Manager – Phase 1 / 1.1
+-- MixMax Manager – Phase 1 / 1.1 / 1.2 / 1.3
 -- In der Supabase SQL-Konsole ausführen.
 -- Neue Projekte: gesamten Inhalt ausführen.
--- Bestehende Phase-1-Tabellen: denselben Inhalt ausführen.
+-- Bestehende Tabellen: denselben Inhalt ausführen.
 -- CREATE TABLE IF NOT EXISTS ändert vorhandene Tabellen nicht;
--- die ALTER-Blöcke ergänzen optionale Spalten idempotent.
+-- die ALTER-Blöcke ergänzen optionale Spalten und Constraints idempotent.
 
 create extension if not exists pgcrypto;
 
@@ -17,7 +17,7 @@ create table if not exists public.bookings (
   note text,
   date date not null,
   paid_by text not null check (paid_by in ('siraj', 'chedi', 'other')),
-  booking_kind text not null default 'normal' check (booking_kind in ('normal', 'employee_advance')),
+  booking_kind text not null default 'normal' check (booking_kind in ('normal', 'employee_advance', 'salary', 'tip', 'other_staff')),
   employee_name text,
   created_at timestamptz not null default now(),
   created_by uuid not null references auth.users (id)
@@ -49,17 +49,12 @@ begin
   end if;
 end $$;
 
-do $$
-begin
-  if not exists (
-    select 1 from pg_constraint
-    where conname = 'bookings_booking_kind_check'
-  ) then
-    alter table public.bookings
-      add constraint bookings_booking_kind_check
-      check (booking_kind in ('normal', 'employee_advance'));
-  end if;
-end $$;
+alter table public.bookings
+  drop constraint if exists bookings_booking_kind_check;
+
+alter table public.bookings
+  add constraint bookings_booking_kind_check
+  check (booking_kind in ('normal', 'employee_advance', 'salary', 'tip', 'other_staff'));
 
 create index if not exists bookings_date_created_idx
   on public.bookings (date desc, created_at desc);

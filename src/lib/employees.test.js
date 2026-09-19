@@ -60,18 +60,18 @@ describe('employees', () => {
   });
 
   it('keeps bookings when an employee is removed', () => {
-    const bookings = [{
-      id: 'v1',
-      type: 'out',
-      amount: 100,
-      booking_kind: 'employee_advance',
-      employee_name: 'Ahmed'
-    }];
+    const bookings = [
+      { id: 'v1', type: 'out', amount: 100, booking_kind: 'employee_advance', employee_name: 'Ahmed' },
+      { id: 's1', type: 'out', amount: 800, booking_kind: 'salary', employee_name: 'Ahmed' },
+      { id: 't1', type: 'out', amount: 20, booking_kind: 'tip', employee_name: 'Ahmed' },
+      { id: 'o1', type: 'out', amount: 15, booking_kind: 'other_staff', employee_name: 'Ahmed' }
+    ];
     const employees = [{ id: 'e1', name: 'Ahmed' }];
     const nextEmployees = applyEmployeeDelete(employees, 'e1');
     expect(nextEmployees).toEqual([]);
     expect(deletingEmployeeKeepsBookings(bookings, bookings)).toBe(true);
-    expect(applyDelete(bookings, 'e1')).toHaveLength(1);
-    expect(bookings[0].employee_name).toBe('Ahmed');
+    expect(applyDelete(bookings, 'e1')).toHaveLength(4);
+    expect(bookings.map((row) => row.employee_name)).toEqual(['Ahmed', 'Ahmed', 'Ahmed', 'Ahmed']);
+    expect(bookings.map((row) => row.booking_kind)).toEqual(['employee_advance', 'salary', 'tip', 'other_staff']);
   });
 });

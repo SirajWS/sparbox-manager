@@ -156,12 +156,21 @@
 
         <article class="panel form-panel booking-form-card">
           <span class="eyebrow" data-i18n="employees_eyebrow">Personal</span>
-          <h2 data-i18n="record_advance">Vorschuss erfassen</h2>
+          <h2 data-i18n="record_staff_payment">Personalzahlung erfassen</h2>
           <p id="no-employees-hint" class="form-hint" hidden data-i18n="no_employees">Noch keine Mitarbeiter. Füge zuerst einen Mitarbeiter hinzu.</p>
           <form id="advance-form" autocomplete="off">
             <label class="field"><span data-i18n="employee">Mitarbeiter</span>
               <select id="employee-input"></select>
             </label>
+            <div class="field field-span">
+              <span class="field-label" data-i18n="staff_kind">Art</span>
+              <div class="choice-row four" role="group" data-i18n-aria="staff_kind" aria-label="Art">
+                <button type="button" class="choice" data-staff-kind="salary" data-i18n="kind_salary">Gehalt</button>
+                <button type="button" class="choice active" data-staff-kind="employee_advance" data-i18n="kind_advance">Vorschuss</button>
+                <button type="button" class="choice" data-staff-kind="tip" data-i18n="kind_tip">Trinkgeld</button>
+                <button type="button" class="choice" data-staff-kind="other_staff" data-i18n="kind_other">Sonstiges</button>
+              </div>
+            </div>
             <label class="field"><span data-i18n="amount">Betrag</span>
               <input id="advance-amount-input" inputmode="decimal" autocomplete="off" data-i18n-placeholder="advance_amount_placeholder" placeholder="z. B. 100,000" />
             </label>
@@ -180,20 +189,40 @@
               <input id="advance-note-input" maxlength="120" data-i18n-placeholder="note_optional" placeholder="optional" />
             </label>
             <p id="advance-error" class="form-error field-span" hidden></p>
-            <p class="form-hint field-span" data-i18n="advance_hint">Ein Vorschuss ist eine normale Personal-Ausgabe im gemeinsamen Buch. Speichern wie bei Buchungen: letztes Pflichtfeld, Enter oder Betragsfeld verlassen.</p>
+            <p class="form-hint field-span" data-i18n="staff_payment_hint">Eine Personalzahlung ist eine normale Personal-Ausgabe im gemeinsamen Buch. Speichern wie bei Buchungen: letztes Pflichtfeld, Enter oder Betragsfeld verlassen.</p>
           </form>
         </article>
 
         <article class="panel">
+          <div class="panel-head staff-head">
+            <div><span class="eyebrow" data-i18n="summary">Auswertung</span><h2 data-i18n="staff_chart_title">Personalzahlungen – 12 Monate</h2></div>
+            <button class="primary" id="staff-pdf-btn" type="button" data-i18n="staff_pdf">PDF erstellen</button>
+          </div>
+          <div class="staff-filters">
+            <label class="field"><span data-i18n="employee">Mitarbeiter</span>
+              <select id="staff-employee-filter"></select>
+            </label>
+            <label class="field"><span data-i18n="year">Jahr</span>
+              <select id="staff-year-filter"></select>
+            </label>
+            <label class="field"><span data-i18n="period">Zeitraum</span>
+              <select id="staff-month-filter"></select>
+            </label>
+          </div>
+          <div id="staff-kind-totals" class="summary-grid staff-kind-totals"></div>
+          <div id="staff-chart" class="staff-chart"></div>
+        </article>
+
+        <article class="panel">
           <div class="panel-head">
-            <div><span class="eyebrow" data-i18n="summary">Auswertung</span><h2 data-i18n="advances_by_employee">Vorschüsse je Mitarbeiter</h2></div>
+            <div><span class="eyebrow" data-i18n="summary">Auswertung</span><h2 data-i18n="staff_by_employee">Personal je Mitarbeiter</h2></div>
           </div>
           <div id="employee-summary" class="summary-grid employee-summary"></div>
         </article>
 
         <article class="panel">
           <div class="panel-head">
-            <div><span class="eyebrow" data-i18n="history">Historie</span><h2 data-i18n="saved_advances">Gespeicherte Vorschüsse</h2></div>
+            <div><span class="eyebrow" data-i18n="history">Historie</span><h2 data-i18n="saved_staff_payments">Gespeicherte Personalzahlungen</h2></div>
           </div>
           <div id="advance-list" class="booking-list"></div>
         </article>
@@ -212,9 +241,10 @@
           <article class="panel form-panel">
             <span class="eyebrow" data-i18n="language">Sprache</span>
             <h2 data-i18n="language">Sprache</h2>
-            <div class="choice-row" role="group" data-i18n-aria="language" aria-label="Sprache">
+            <div class="choice-row three" role="group" data-i18n-aria="language" aria-label="Sprache">
               <button type="button" class="choice" data-lang="de" data-i18n="language_de">Deutsch</button>
               <button type="button" class="choice" data-lang="en" data-i18n="language_en">English</button>
+              <button type="button" class="choice" data-lang="fr" data-i18n="language_fr">Français</button>
             </div>
           </article>
           <article class="panel form-panel">
