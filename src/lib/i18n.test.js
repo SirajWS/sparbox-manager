@@ -73,10 +73,32 @@ describe('i18n', () => {
     expect(staffKindLabel('de', 'salary')).toBe('Gehalt');
     expect(staffKindLabel('en', 'employee_advance')).toBe('Advance');
     expect(staffKindLabel('fr', 'tip')).toBe('Pourboire');
+    expect(staffKindLabel('de', 'other_staff')).toBe('Sonstiges');
+    expect(staffKindLabel('en', 'other_staff')).toBe('Other');
+    expect(staffKindLabel('fr', 'other_staff')).toBe('Divers');
+    expect(staffKindLabel('fr', 'salary')).toBe('Salaire');
+    expect(staffKindLabel('de', 'employee_advance')).toBe('Vorschuss');
     expect(monthShortLabel('de', 3)).toBe('Mär');
     expect(monthShortLabel('en', 3)).toBe('Mar');
     expect(monthShortLabel('fr', 8)).toBe('Août');
     expect(localeFor('fr')).toBe('fr-FR');
+  });
+
+  it('translates add, edit and delete labels in DE/EN/FR', () => {
+    expect(t('de', 'add_booking')).toBe('Buchung hinzufügen');
+    expect(t('en', 'add_booking')).toBe('Add entry');
+    expect(t('fr', 'add_booking')).toBe('Ajouter l’écriture');
+    expect(t('de', 'edit')).toBe('Bearbeiten');
+    expect(t('en', 'edit')).toBe('Edit');
+    expect(t('fr', 'edit')).toBe('Modifier');
+    expect(t('en', 'remove')).toBe('Delete');
+    expect(t('fr', 'remove')).toBe('Supprimer');
+    expect(t('de', 'confirm_remove_booking')).toBe('Möchtest du diese Buchung wirklich löschen?');
+    expect(t('en', 'confirm_remove_booking')).toBe('Do you really want to delete this entry?');
+    expect(t('fr', 'confirm_remove_booking')).toBe('Voulez-vous vraiment supprimer cette écriture ?');
+    expect(t('de', 'save_changes')).toBe('Änderungen speichern');
+    expect(t('en', 'save_changes')).toBe('Save changes');
+    expect(t('fr', 'save_changes')).toBe('Enregistrer les modifications');
   });
 
   it('translates PDF labels without changing stored values', () => {
@@ -85,5 +107,15 @@ describe('i18n', () => {
     expect(t('fr', 'staff_pdf_title')).toBe('Relevé des paiements du personnel');
     expect(t('de', 'statement_title')).toBe('Kontoauszug');
     expect(t('fr', 'col_item_desc')).toBe('Article / description');
+    expect(t('de', 'payment_details')).toBe('Zahlungsdetails');
+    expect(t('en', 'payment_details')).toBe('Payment details');
+    expect(t('fr', 'payment_details')).toBe('Détail des paiements');
+    expect(t('de', 'salary_overview')).toBe('Gehaltsübersicht');
+    expect(t('en', 'sign_employee')).toBe('Employee');
+    expect(t('fr', 'sign_management')).toBe('Gestion');
+    expect(t('de', 'shared_ledger_status')).toBe('Gemeinsames Buch · TND');
+    expect(t('en', 'shared_ledger_status')).toBe('Shared ledger · TND');
+    expect(t('fr', 'shared_ledger_status')).toBe('Livre commun · TND');
+    expect(t('de', 'shared_ledger_status')).not.toMatch(/Siraj|Chedi/);
   });
 });

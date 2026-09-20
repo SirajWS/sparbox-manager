@@ -1,5 +1,5 @@
 import { isPositiveAmount, roundAmount } from './money.js';
-import { CUSTOM_ITEM, PERSONNEL_CATEGORY, PURCHASE_CATEGORY } from './catalog.js';
+import { CUSTOM_ITEM, PERSONNEL_CATEGORY, PURCHASE_CATEGORY, PURCHASE_ITEMS } from './catalog.js';
 
 export const BOOKING_TYPES = {
   out: 'Ausgabe',
@@ -139,6 +139,69 @@ export function canStartSave({ complete, fingerprint, savingLock, inFlightFinger
   if (!complete) return false;
   if (inFlightFingerprint && fingerprint === inFlightFingerprint) return false;
   return true;
+}
+
+export function isBookingAutosaveEnabled() {
+  return false;
+}
+
+export function canExplicitSave({ complete, savingLock }) {
+  return Boolean(complete) && !savingLock;
+}
+
+export function applyUpdate(list, booking) {
+  if (!booking || !booking.id) return list;
+  const index = list.findIndex((item) => item.id === booking.id);
+  if (index === -1) return applyInsert(list, booking);
+  const next = [...list];
+  next[index] = booking;
+  return next;
+}
+
+export function preservesBookingIdentity(before, after) {
+  if (!before || !after) return false;
+  return before.id === after.id
+    && before.created_at === after.created_at
+    && before.created_by === after.created_by;
+}
+
+export function customNoteFromBooking(booking) {
+  const note = String(booking?.note || '').trim();
+  if (!note) return '';
+  if (!isStaffPayment(booking)) return note;
+  const match = note.match(/^(Gehalt|Vorschuss|Trinkgeld|Sonstiges|Personal)\s+[–-]\s+[^:]+(?::\s*(.*))?$/u);
+  if (match) return String(match[2] || '').trim();
+  return note;
+}
+
+export function bookingToForm(booking) {
+  const kind = bookingKindOf(booking);
+  const storedItem = String(booking?.item || '').trim();
+  const knownItem = PURCHASE_ITEMS.includes(storedItem);
+  const purchase = booking?.type === 'out' && booking?.category === PURCHASE_CATEGORY;
+  return {
+    id: booking?.id || null,
+    type: booking?.type || 'out',
+    amount: Number(booking?.amount),
+    category: booking?.category || '',
+    item: purchase ? (knownItem ? storedItem : (storedItem ? CUSTOM_ITEM : '')) : '',
+    itemName: purchase && storedItem && !knownItem ? storedItem : '',
+    date: booking?.date || '',
+    paidBy: booking?.paid_by || '',
+    note: customNoteFromBooking(booking),
+    bookingKind: kind,
+    employeeName: String(booking?.employee_name || '').trim()
+  };
+}
+
+export function toUpdatePayload(form) {
+  const payload = isStaffPaymentKind(bookingKindOf(form))
+    ? toStaffPaymentPayload(form)
+    : toNormalPayload(form);
+  delete payload.id;
+  delete payload.created_at;
+  delete payload.created_by;
+  return payload;
 }
 
 export function sortNewestFirst(bookings) {

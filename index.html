@@ -6,13 +6,15 @@
   <meta name="theme-color" content="#102238" />
   <title>MixMax Manager</title>
   <meta name="description" content="Shared finance manager for MixMax." />
+  <link rel="icon" type="image/png" href="./favicon.png" />
+  <link rel="apple-touch-icon" href="./favicon.png" />
 </head>
 <body>
   <div id="boot" class="boot" data-i18n="loading">MixMax Manager wird geladen…</div>
 
   <section id="setup-screen" class="auth-screen" hidden>
     <article class="auth-card">
-      <span class="brand-mark">M</span>
+      <img class="auth-logo" src="./mixmax-logo-transparent.png" width="88" height="88" alt="MixMax" />
       <h1>MixMax Manager</h1>
       <p data-i18n="setup_title">Supabase ist noch nicht konfiguriert.</p>
       <p class="muted" data-i18n="setup_hint">Setze lokal in .env und in Vercel die Variablen VITE_SUPABASE_URL und VITE_SUPABASE_ANON_KEY. Vorlagen stehen in .env.example.</p>
@@ -21,7 +23,7 @@
 
   <section id="login-screen" class="auth-screen" hidden>
     <article class="auth-card">
-      <span class="brand-mark">M</span>
+      <img class="auth-logo" src="./mixmax-logo-transparent.png" width="88" height="88" alt="MixMax" />
       <h1>MixMax Manager</h1>
       <p data-i18n="login_intro">Bitte anmelden, um das gemeinsame Buch zu sehen.</p>
       <form id="login-form">
@@ -39,7 +41,7 @@
 
   <div id="app" class="shell" hidden>
     <aside class="sidebar" id="sidebar">
-      <a class="brand" href="#overview" id="brand-link"><span class="brand-mark">M</span><span>MixMax Manager</span></a>
+      <a class="brand" href="#overview" id="brand-link"><img class="brand-logo" src="./mixmax-logo-transparent.png" width="48" height="48" alt="MixMax" /><span class="brand-text"><strong>MixMax</strong><small>Manager</small></span></a>
       <nav data-i18n-aria="nav_main" aria-label="Hauptnavigation">
         <button class="nav-item active" data-view="overview"><span aria-hidden="true">⌂</span> <span data-i18n="nav_overview">Übersicht</span></button>
         <button class="nav-item" data-view="bookings"><span aria-hidden="true">↕</span> <span data-i18n="nav_bookings">Buchungen</span></button>
@@ -49,7 +51,7 @@
       </nav>
       <div class="device-card">
         <span class="status-dot"></span>
-        <div><strong data-i18n="shared_ledger">Gemeinsames Buch</strong><small data-i18n="shared_ledger_sub">Siraj &amp; Chedi · TND</small></div>
+        <strong data-i18n="shared_ledger_status">Gemeinsames Buch · TND</strong>
       </div>
     </aside>
 
@@ -127,7 +129,10 @@
               <input id="note-input" maxlength="120" data-i18n-placeholder="note_optional" placeholder="optional" />
             </label>
             <p id="booking-error" class="form-error field-span" hidden></p>
-            <p class="form-hint field-span" data-i18n="booking_hint">Kein Speichern-Button: Die Buchung wird gespeichert, sobald alle Pflichtfelder stehen – beim Betrag erst mit Enter oder wenn das Feld verlassen wird.</p>
+            <p class="form-hint field-span" data-i18n="booking_hint">Prüfe die Angaben und füge die Buchung anschließend hinzu.</p>
+            <div class="field-span form-actions">
+              <button class="primary full" id="add-booking-btn" type="button" data-i18n="add_booking" disabled>Buchung hinzufügen</button>
+            </div>
           </form>
         </article>
 
@@ -265,6 +270,65 @@
   </div>
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <div id="edit-dialog" class="modal-backdrop" hidden>
+    <article class="modal-card" role="dialog" aria-modal="true" aria-labelledby="edit-title">
+      <span class="eyebrow" data-i18n="edit_booking">Buchung bearbeiten</span>
+      <h2 id="edit-title" data-i18n="edit_booking">Buchung bearbeiten</h2>
+      <form id="edit-form" autocomplete="off">
+        <div class="field" id="edit-type-field">
+          <span class="field-label" data-i18n="type">Typ</span>
+          <div class="choice-row" role="group" data-i18n-aria="type" aria-label="Typ">
+            <button type="button" class="choice" data-edit-type="out" data-i18n="type_out">Ausgabe</button>
+            <button type="button" class="choice" data-edit-type="in" data-i18n="type_in">Einzahlung</button>
+          </div>
+        </div>
+        <label class="field" id="edit-employee-field" hidden><span data-i18n="employee">Mitarbeiter</span>
+          <select id="edit-employee-input"></select>
+        </label>
+        <div class="field field-span" id="edit-kind-field" hidden>
+          <span class="field-label" data-i18n="staff_kind">Art</span>
+          <div class="choice-row four" role="group" data-i18n-aria="staff_kind" aria-label="Art">
+            <button type="button" class="choice" data-edit-kind="salary" data-i18n="kind_salary">Gehalt</button>
+            <button type="button" class="choice" data-edit-kind="employee_advance" data-i18n="kind_advance">Vorschuss</button>
+            <button type="button" class="choice" data-edit-kind="tip" data-i18n="kind_tip">Trinkgeld</button>
+            <button type="button" class="choice" data-edit-kind="other_staff" data-i18n="kind_other">Sonstiges</button>
+          </div>
+        </div>
+        <label class="field"><span data-i18n="amount">Betrag</span>
+          <input id="edit-amount-input" inputmode="decimal" autocomplete="off" data-i18n-placeholder="amount_placeholder" />
+        </label>
+        <label class="field" id="edit-category-field"><span data-i18n="category">Kategorie</span>
+          <select id="edit-category-input"></select>
+        </label>
+        <label class="field" id="edit-item-field" hidden><span data-i18n="item">Artikel</span>
+          <select id="edit-item-input"></select>
+        </label>
+        <label class="field field-span" id="edit-item-name-field" hidden><span data-i18n="item_name">Artikelname</span>
+          <input id="edit-item-name-input" maxlength="60" data-i18n-placeholder="item_name_placeholder" />
+        </label>
+        <label class="field"><span data-i18n="date">Datum</span>
+          <input id="edit-date-input" type="date" required />
+        </label>
+        <div class="field field-span">
+          <span class="field-label" data-i18n="paid_by">Bezahlt von</span>
+          <div class="choice-row three" role="group" data-i18n-aria="paid_by" aria-label="Bezahlt von">
+            <button type="button" class="choice" data-edit-paid-by="siraj" data-i18n="paid_siraj">Siraj</button>
+            <button type="button" class="choice" data-edit-paid-by="chedi" data-i18n="paid_chedi">Chedi</button>
+            <button type="button" class="choice" data-edit-paid-by="other" data-i18n="paid_other">Andere</button>
+          </div>
+        </div>
+        <label class="field field-span"><span data-i18n="note">Beschreibung / Notiz</span>
+          <input id="edit-note-input" maxlength="120" data-i18n-placeholder="note_optional" />
+        </label>
+        <p id="edit-error" class="form-error field-span" hidden></p>
+        <div class="modal-actions field-span">
+          <button class="secondary" id="edit-cancel-btn" type="button" data-i18n="cancel">Abbrechen</button>
+          <button class="primary" id="edit-save-btn" type="button" data-i18n="save_changes">Änderungen speichern</button>
+        </div>
+      </form>
+    </article>
+  </div>
   <script type="module" src="/src/main.js"></script>
 </body>
 </html>

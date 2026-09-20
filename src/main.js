@@ -3,13 +3,17 @@ import { createSupabase, getSupabaseConfig } from './lib/supabaseClient.js';
 import {
   applyDelete,
   applyInsert,
+  applyUpdate,
   availableYears,
   bookingFingerprint,
+  bookingToForm,
   bookingTitle,
+  canExplicitSave,
   canStartSave,
   categoriesForType,
   filterStaffPayments,
   isFormComplete,
+  isStaffPaymentKind,
   needsCustomItemName,
   runningBalances,
   sortNewestFirst,
@@ -20,7 +24,8 @@ import {
   staffYearMonths,
   summarize,
   toNormalPayload,
-  toStaffPaymentPayload
+  toStaffPaymentPayload,
+  toUpdatePayload
 } from './lib/bookings.js';
 import {
   applyEmployeeDelete,
@@ -31,7 +36,7 @@ import {
 import { CUSTOM_ITEM, PURCHASE_CATEGORY, PURCHASE_ITEMS } from './lib/catalog.js';
 import { formatTnd, parseAmount } from './lib/money.js';
 import { esc, formatDate, isNetworkError, todayISO } from './lib/format.js';
-import { downloadStaffPdf, downloadStatementPdf } from './lib/pdf.js';
+import { downloadStaffPdf, downloadStatementPdf, loadPdfLogo } from './lib/pdf.js';
 import { renderStaffChartHtml } from './lib/staffChart.js';
 import {
   applyStaticI18n,
@@ -71,6 +76,13 @@ let currentView = 'overview';
 let staffFilterEmployee = '';
 let staffFilterYear = new Date().getFullYear();
 let staffFilterMonth = '';
+let editingId = null;
+const editState = {
+  type: 'out',
+  paidBy: '',
+  bookingKind: 'normal',
+  staff: false
+};
 
 const formState = {
   type: 'out',
@@ -214,7 +226,10 @@ function setFormError(id, message) {
 function bookingRow(booking, compact = false) {
   const out = booking.type === 'out';
   const note = booking.note ? `<small>${esc(booking.note)}</small>` : '';
-  const remove = compact ? '' : `<button type="button" class="text-button danger" data-remove="${esc(booking.id)}">${esc(t(lang, 'remove'))}</button>`;
+  const remove = compact ? '' : `<div class="booking-action-row">
+      <button type="button" class="text-button" data-edit="${esc(booking.id)}">${esc(t(lang, 'edit'))}</button>
+      <button type="button" class="text-button danger" data-remove="${esc(booking.id)}">${esc(t(lang, 'remove'))}</button>
+    </div>`;
   const title = booking.item
     ? `${categoryLabel(lang, booking.category)} · ${itemLabel(lang, booking.item)}`
     : bookingTitle(booking, {
@@ -396,11 +411,27 @@ function applyLanguage() {
   fillCategories();
   fillItems();
   tickClock();
+  syncAddButton();
+  if (editingId) {
+    applyStaticI18n($('#edit-dialog'), lang);
+    fillEditSelects();
+  }
 }
 
 function setLanguage(next) {
   lang = saveLanguage(next, window.localStorage);
   renderAll();
+  syncAddButton();
+  if (editingId) fillEditSelects();
+}
+
+function syncAddButton() {
+  const btn = $('#add-booking-btn');
+  if (!btn) return;
+  btn.disabled = !canExplicitSave({
+    complete: isFormComplete(readBookingForm()),
+    savingLock
+  });
 }
 
 async function loadBookings() {
@@ -429,6 +460,11 @@ function subscribeRealtime() {
     .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'bookings' }, (payload) => {
       bookings = applyInsert(bookings, payload.new);
       renderAll();
+    })
+    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'bookings' }, (payload) => {
+      bookings = applyUpdate(bookings, payload.new);
+      renderAll();
+      syncAddButton();
     })
     .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'bookings' }, (payload) => {
       bookings = applyDelete(bookings, payload.old?.id);
@@ -474,9 +510,17 @@ async function insertBooking(form, payload, onSuccess) {
   }
 }
 
-async function trySaveBooking() {
+async function addBooking() {
   const form = readBookingForm();
+  const btn = $('#add-booking-btn');
   setFormError('#booking-error', '');
+  if (!isFormComplete(form)) {
+    setFormError('#booking-error', t(lang, 'form_incomplete'));
+    syncAddButton();
+    return;
+  }
+  if (!canExplicitSave({ complete: true, savingLock })) return;
+  btn.disabled = true;
   try {
     await insertBooking(form, toNormalPayload(form), () => {
       $('#amount-input').value = '';
@@ -486,10 +530,11 @@ async function trySaveBooking() {
       $('#amount-input').focus();
     });
   } catch (error) {
-    if (!isFormComplete(form)) return;
     const message = isNetworkError(error) ? t(lang, 'save_offline') : t(lang, 'save_failed');
     setFormError('#booking-error', message);
     showToast(message);
+  } finally {
+    syncAddButton();
   }
 }
 
@@ -509,6 +554,156 @@ async function trySaveAdvance() {
     const message = isNetworkError(error) ? t(lang, 'save_offline') : t(lang, 'save_failed');
     setFormError('#advance-error', message);
     showToast(message);
+  }
+}
+
+function readEditForm() {
+  const staff = editState.staff;
+  return {
+    type: staff ? 'out' : editState.type,
+    amount: parseAmount($('#edit-amount-input').value),
+    category: staff ? 'Personal' : $('#edit-category-input').value,
+    item: $('#edit-item-input').value,
+    itemName: $('#edit-item-name-input').value,
+    date: $('#edit-date-input').value,
+    paidBy: editState.paidBy,
+    note: $('#edit-note-input').value,
+    bookingKind: staff ? editState.bookingKind : 'normal',
+    employeeName: $('#edit-employee-input').value
+  };
+}
+
+function fillEditSelects() {
+  const form = {
+    type: editState.type,
+    category: $('#edit-category-input').value,
+    item: $('#edit-item-input').value
+  };
+  const cat = $('#edit-category-input');
+  const options = categoriesForType(editState.type);
+  const keepCat = options.includes(form.category) ? form.category : '';
+  cat.innerHTML = `<option value="">${esc(t(lang, 'category_placeholder'))}</option>`
+    + options.map((name) => `<option value="${esc(name)}">${esc(categoryLabel(lang, name))}</option>`).join('');
+  cat.value = keepCat;
+
+  const item = $('#edit-item-input');
+  const keepItem = PURCHASE_ITEMS.includes(form.item) ? form.item : '';
+  item.innerHTML = `<option value="">${esc(t(lang, 'item_placeholder'))}</option>`
+    + PURCHASE_ITEMS.map((name) => `<option value="${esc(name)}">${esc(itemLabel(lang, name))}</option>`).join('');
+  item.value = keepItem;
+
+  const emp = $('#edit-employee-input');
+  const names = employees.map((row) => row.name);
+  const currentName = emp.value;
+  const extra = currentName && !names.includes(currentName) ? currentName : '';
+  emp.innerHTML = `<option value="">${esc(t(lang, 'employee_placeholder'))}</option>`
+    + [...names, extra].filter(Boolean).map((name) => `<option value="${esc(name)}">${esc(name)}</option>`).join('');
+  if (currentName) emp.value = currentName;
+  syncEditItemFields();
+}
+
+function syncEditItemFields() {
+  const showItem = !editState.staff && editState.type === 'out' && $('#edit-category-input').value === PURCHASE_CATEGORY;
+  $('#edit-item-field').hidden = !showItem;
+  $('#edit-item-name-field').hidden = !showItem || $('#edit-item-input').value !== CUSTOM_ITEM;
+  if (!showItem) {
+    $('#edit-item-input').value = '';
+    $('#edit-item-name-input').value = '';
+  }
+}
+
+function setEditChoices() {
+  document.querySelectorAll('[data-edit-type]').forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.editType === editState.type);
+  });
+  document.querySelectorAll('[data-edit-paid-by]').forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.editPaidBy === editState.paidBy);
+  });
+  document.querySelectorAll('[data-edit-kind]').forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.editKind === editState.bookingKind);
+  });
+}
+
+function openEdit(id) {
+  const booking = bookings.find((row) => row.id === id);
+  if (!booking) return;
+  const form = bookingToForm(booking);
+  editingId = booking.id;
+  editState.staff = isStaffPaymentKind(form.bookingKind);
+  editState.type = form.type;
+  editState.paidBy = form.paidBy;
+  editState.bookingKind = form.bookingKind;
+  $('#edit-type-field').hidden = editState.staff;
+  $('#edit-category-field').hidden = editState.staff;
+  $('#edit-employee-field').hidden = !editState.staff;
+  $('#edit-kind-field').hidden = !editState.staff;
+  fillEditSelects();
+  $('#edit-amount-input').value = form.amount;
+  $('#edit-category-input').value = form.category;
+  $('#edit-item-input').value = form.item;
+  $('#edit-item-name-input').value = form.itemName;
+  $('#edit-date-input').value = form.date;
+  $('#edit-note-input').value = form.note;
+  $('#edit-employee-input').value = form.employeeName;
+  if (form.employeeName && !$('#edit-employee-input').value) {
+    const select = $('#edit-employee-input');
+    select.insertAdjacentHTML('beforeend', `<option value="${esc(form.employeeName)}">${esc(form.employeeName)}</option>`);
+    select.value = form.employeeName;
+  }
+  syncEditItemFields();
+  setEditChoices();
+  setFormError('#edit-error', '');
+  $('#edit-dialog').hidden = false;
+}
+
+function closeEdit() {
+  editingId = null;
+  $('#edit-dialog').hidden = true;
+  setFormError('#edit-error', '');
+}
+
+async function saveEdit() {
+  if (!editingId) return;
+  const existing = bookings.find((row) => row.id === editingId);
+  if (!existing) return;
+  const form = readEditForm();
+  const btn = $('#edit-save-btn');
+  setFormError('#edit-error', '');
+  if (!isFormComplete(form)) {
+    setFormError('#edit-error', t(lang, 'form_incomplete'));
+    return;
+  }
+  if (savingLock) return;
+  savingLock = true;
+  btn.disabled = true;
+  const previous = existing;
+  try {
+    const { data, error } = await supabase
+      .from('bookings')
+      .update(toUpdatePayload(form))
+      .eq('id', editingId)
+      .select(BOOKING_COLUMNS)
+      .single();
+    if (error) throw error;
+    if (data.id !== existing.id) throw new Error('identity-changed');
+    bookings = applyUpdate(bookings, {
+      ...data,
+      created_at: existing.created_at,
+      created_by: existing.created_by,
+      id: existing.id
+    });
+    renderAll();
+    closeEdit();
+    showToast(t(lang, 'updated', { amount: formatTnd(form.amount) }));
+  } catch (error) {
+    bookings = applyUpdate(bookings, previous);
+    renderAll();
+    const message = isNetworkError(error) ? t(lang, 'update_offline') : t(lang, 'update_failed');
+    setFormError('#edit-error', message);
+    showToast(message);
+  } finally {
+    savingLock = false;
+    btn.disabled = false;
   }
 }
 
@@ -595,7 +790,7 @@ function bindAppEvents() {
       formState.type = btn.dataset.type;
       document.querySelectorAll('[data-type]').forEach((el) => el.classList.toggle('active', el === btn));
       fillCategories();
-      trySaveBooking();
+      syncAddButton();
     });
   });
 
@@ -603,7 +798,7 @@ function bindAppEvents() {
     btn.addEventListener('click', () => {
       formState.paidBy = btn.dataset.paidBy;
       document.querySelectorAll('[data-paid-by]').forEach((el) => el.classList.toggle('active', el === btn));
-      trySaveBooking();
+      syncAddButton();
     });
   });
 
@@ -634,54 +829,86 @@ function bindAppEvents() {
   $('#staff-month-filter').addEventListener('change', () => {
     staffFilterMonth = $('#staff-month-filter').value;
   });
-  $('#staff-pdf-btn').addEventListener('click', () => {
+  $('#staff-pdf-btn').addEventListener('click', async () => {
     if (!staffFilterEmployee) return;
     downloadStaffPdf(bookings, {
       employeeName: staffFilterEmployee,
       year: staffFilterYear,
       month: staffFilterMonth || null
-    }, lang);
+    }, lang, await loadPdfLogo());
   });
 
   $('#category-input').addEventListener('change', () => {
     syncItemFields();
-    trySaveBooking();
+    syncAddButton();
   });
   $('#item-input').addEventListener('change', () => {
     syncItemFields();
-    trySaveBooking();
+    syncAddButton();
   });
-  $('#item-name-input').addEventListener('keydown', (event) => {
-    if (event.key === 'Enter') {
-      event.preventDefault();
-      trySaveBooking();
-    }
+  $('#item-name-input').addEventListener('input', syncAddButton);
+  $('#amount-input').addEventListener('input', syncAddButton);
+  $('#amount-input').addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') event.preventDefault();
   });
-  $('#item-name-input').addEventListener('blur', () => trySaveBooking());
-  $('#date-input').addEventListener('change', () => trySaveBooking());
+  $('#date-input').addEventListener('change', syncAddButton);
+  $('#note-input').addEventListener('input', syncAddButton);
   $('#employee-input').addEventListener('change', () => trySaveAdvance());
   $('#advance-date-input').addEventListener('change', () => trySaveAdvance());
 
-  bindAmountCommit($('#amount-input'), trySaveBooking);
   bindAmountCommit($('#advance-amount-input'), trySaveAdvance);
   $('#booking-form').addEventListener('submit', (event) => event.preventDefault());
+  $('#add-booking-btn').addEventListener('click', addBooking);
   $('#advance-form').addEventListener('submit', (event) => event.preventDefault());
   $('#employee-form').addEventListener('submit', addEmployee);
 
   $('#booking-list').addEventListener('click', (event) => {
+    const editBtn = event.target.closest('[data-edit]');
+    if (editBtn) openEdit(editBtn.dataset.edit);
     const btn = event.target.closest('[data-remove]');
     if (btn) removeBooking(btn.dataset.remove);
   });
   $('#advance-list').addEventListener('click', (event) => {
+    const editBtn = event.target.closest('[data-edit]');
+    if (editBtn) openEdit(editBtn.dataset.edit);
     const btn = event.target.closest('[data-remove]');
     if (btn) removeBooking(btn.dataset.remove);
+  });
+  document.querySelectorAll('[data-edit-type]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      editState.type = btn.dataset.editType;
+      setEditChoices();
+      fillEditSelects();
+    });
+  });
+  document.querySelectorAll('[data-edit-paid-by]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      editState.paidBy = btn.dataset.editPaidBy;
+      setEditChoices();
+    });
+  });
+  document.querySelectorAll('[data-edit-kind]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      editState.bookingKind = btn.dataset.editKind;
+      setEditChoices();
+    });
+  });
+  $('#edit-category-input').addEventListener('change', syncEditItemFields);
+  $('#edit-item-input').addEventListener('change', syncEditItemFields);
+  $('#edit-save-btn').addEventListener('click', saveEdit);
+  $('#edit-cancel-btn').addEventListener('click', closeEdit);
+  $('#edit-form').addEventListener('submit', (event) => event.preventDefault());
+  $('#edit-dialog').addEventListener('click', (event) => {
+    if (event.target.id === 'edit-dialog') closeEdit();
   });
   $('#employee-chips').addEventListener('click', (event) => {
     const btn = event.target.closest('[data-remove-employee]');
     if (btn) removeEmployee(btn.dataset.removeEmployee);
   });
 
-  $('#download-pdf').addEventListener('click', () => downloadStatementPdf(bookings, lang));
+  $('#download-pdf').addEventListener('click', async () => {
+    downloadStatementPdf(bookings, lang, await loadPdfLogo());
+  });
   $('#logout-btn').addEventListener('click', () => supabase.auth.signOut());
 }
 

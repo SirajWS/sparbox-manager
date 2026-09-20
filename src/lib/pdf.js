@@ -130,19 +130,41 @@ function addText(ops, x, y, text, { size = 10, color = [0.078, 0.125, 0.2], alig
   ops.push(`BT /F1 ${size} Tf ${rgb(color)} rg 1 0 0 1 ${drawX.toFixed(2)} ${y.toFixed(2)} Tm (${pdfString(value)}) Tj ET`);
 }
 
-function buildPdf(pages) {
+function toHexStream(bytes) {
+  let hex = '';
+  for (let i = 0; i < bytes.length; i += 1) {
+    hex += bytes[i].toString(16).padStart(2, '0');
+  }
+  return `${hex}>\n`;
+}
+
+function imageXObject(logo) {
+  const rgbHex = toHexStream(logo.rgb);
+  const alphaHex = toHexStream(logo.alpha);
+  const rgb = `<< /Type /XObject /Subtype /Image /Width ${logo.width} /Height ${logo.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /ASCIIHexDecode /SMask 5 0 R /Length ${rgbHex.length} >>\nstream\n${rgbHex}endstream`;
+  const mask = `<< /Type /XObject /Subtype /Image /Width ${logo.width} /Height ${logo.height} /ColorSpace /DeviceGray /BitsPerComponent 8 /Filter /ASCIIHexDecode /Length ${alphaHex.length} >>\nstream\n${alphaHex}endstream`;
+  return { rgb, mask };
+}
+
+function buildPdf(pages, logo = null) {
   const contentObjs = pages.map((ops) => {
     const stream = ops.join('\n');
     return `<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`;
   });
   const pageCount = pages.length;
-  const kids = pages.map((_, i) => `${4 + i} 0 R`).join(' ');
+  const hasLogo = Boolean(logo?.rgb && logo?.alpha && logo.width && logo.height);
+  const extra = hasLogo ? 2 : 0;
+  const pageStart = 4 + extra;
+  const kids = pages.map((_, i) => `${pageStart + i} 0 R`).join(' ');
+  const xObject = hasLogo ? ' /XObject << /Im1 4 0 R >>' : '';
+  const imageObjs = hasLogo ? imageXObject(logo) : null;
   const objs = [
     '<< /Type /Catalog /Pages 2 0 R >>',
     `<< /Type /Pages /Kids [${kids}] /Count ${pageCount} >>`,
     '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>',
+    ...(imageObjs ? [imageObjs.rgb, imageObjs.mask] : []),
     ...pages.map((_, i) => (
-      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${PAGE_W} ${PAGE_H}] /Resources << /Font << /F1 3 0 R >> >> /Contents ${4 + pageCount + i} 0 R >>`
+      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${PAGE_W} ${PAGE_H}] /Resources << /Font << /F1 3 0 R >>${xObject} >> /Contents ${pageStart + pageCount + i} 0 R >>`
     )),
     ...contentObjs
   ];
@@ -171,12 +193,60 @@ function downloadPdf(content, name) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-function addPageChrome(ops, lang, pageNo) {
-  addFill(ops, 0, PAGE_H - 28, PAGE_W, 28, NAVY);
-  addText(ops, MARGIN, PAGE_H - 18, 'MixMax Manager', { size: 10, color: [1, 1, 1] });
-  addText(ops, PAGE_W - MARGIN, 28, t(lang, 'page', { current: String(pageNo), total: '{total}' }), {
-    size: 8,
-    color: MUTED,
+const HEADER_H = 64;
+const LOGO_PT = 46;
+const CONTENT_TOP = PAGE_H - HEADER_H - 16;
+const GOLD = [0.83, 0.635, 0.18];
+const FOOTER_MIN = 48;
+
+export const PDF_LOGO_SRC = './mixmax-logo-transparent.png';
+
+export async function loadPdfLogo(src = PDF_LOGO_SRC) {
+  if (typeof Image === 'undefined') return null;
+  try {
+    const img = new Image();
+    img.src = src;
+    await img.decode();
+    const size = 160;
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+    const scale = Math.max(size / img.width, size / img.height);
+    const drawW = img.width * scale;
+    const drawH = img.height * scale;
+    ctx.clearRect(0, 0, size, size);
+    ctx.drawImage(img, (size - drawW) / 2, (size - drawH) / 2, drawW, drawH);
+    const pixels = ctx.getImageData(0, 0, size, size).data;
+    const rgb = new Uint8Array(size * size * 3);
+    const alpha = new Uint8Array(size * size);
+    for (let i = 0, p = 0; i < pixels.length; i += 4, p += 1) {
+      rgb[p * 3] = pixels[i];
+      rgb[p * 3 + 1] = pixels[i + 1];
+      rgb[p * 3 + 2] = pixels[i + 2];
+      alpha[p] = pixels[i + 3];
+    }
+    return { width: size, height: size, rgb, alpha };
+  } catch {
+    return null;
+  }
+}
+
+function addPageChrome(ops, lang, pageNo, logo) {
+  addFill(ops, 0, PAGE_H - HEADER_H, PAGE_W, HEADER_H, NAVY);
+  addFill(ops, 0, PAGE_H - HEADER_H - 2, PAGE_W, 2, GOLD);
+  const hasLogo = Boolean(logo?.rgb);
+  const textX = hasLogo ? MARGIN + LOGO_PT + 10 : MARGIN;
+  if (hasLogo) {
+    const y = PAGE_H - HEADER_H + (HEADER_H - LOGO_PT) / 2;
+    ops.push(`q ${LOGO_PT} 0 0 ${LOGO_PT} ${MARGIN.toFixed(2)} ${y.toFixed(2)} cm /Im1 Do Q`);
+  }
+  addText(ops, textX, PAGE_H - 28, 'MixMax Manager', { size: 13, color: [1, 1, 1] });
+  addText(ops, textX, PAGE_H - 42, t(lang, 'internal_admin'), { size: 7.5, color: [0.82, 0.86, 0.9] });
+  addText(ops, PAGE_W - MARGIN, PAGE_H - 32, t(lang, 'page', { current: String(pageNo), total: '{total}' }), {
+    size: 9,
+    color: [1, 1, 1],
     align: 'right'
   });
 }
@@ -241,15 +311,18 @@ export function buildStaffStatementModel(bookings, { employeeName, year, month }
   const totals = staffKindTotals(rows);
   return {
     title: t(lang, 'staff_pdf_title'),
+    subtitle: t(lang, 'staff_internal_sub'),
     employeeName: employeeName || t(lang, 'employee'),
     period: staffPeriodLabel(lang, year, month),
     created: formatDate(todayISO(), lang),
     totals,
     empty: rows.length === 0,
     emptyMessage: t(lang, 'no_staff_in_period'),
+    hasSalary: totals.salary > 0,
     rows: rows.map((booking) => ({
       date: formatDate(booking.date, lang),
       kind: staffKindLabel(lang, bookingKindOf(booking)),
+      kindKey: bookingKindOf(booking),
       paidBy: paidByLabelI18n(lang, booking.paid_by),
       note: userNote(booking) || '–',
       amount: formatTnd(booking.amount)
@@ -259,14 +332,77 @@ export function buildStaffStatementModel(bookings, { employeeName, year, month }
 
 function drawSummaryBoxes(ops, items, y) {
   const gap = 8;
+  const boxH = 46;
   const boxW = (CONTENT_W - gap * (items.length - 1)) / items.length;
   items.forEach((item, i) => {
     const x = MARGIN + i * (boxW + gap);
-    addFill(ops, x, y - 36, boxW, 42, SOFT);
-    addText(ops, x + 8, y - 6, item.label, { size: 7.5, color: MUTED, maxWidth: boxW - 16 });
-    addText(ops, x + 8, y - 24, item.value, { size: 10, color: item.color || NAVY, maxWidth: boxW - 16 });
+    addFill(ops, x, y - boxH, boxW, boxH, SOFT);
+    addFill(ops, x, y - 2.2, boxW, 2.2, item.accent || NAVY);
+    addText(ops, x + 8, y - 14, item.label, { size: 7.5, color: MUTED, maxWidth: boxW - 16 });
+    addText(ops, x + 8, y - 32, item.value, { size: 10.5, color: item.color || NAVY, maxWidth: boxW - 16 });
   });
-  return y - 52;
+  return y - boxH - 10;
+}
+
+function drawInfoBoxes(ops, items, y) {
+  const gap = 8;
+  const boxH = 42;
+  const boxW = (CONTENT_W - gap * (items.length - 1)) / items.length;
+  items.forEach((item, i) => {
+    const x = MARGIN + i * (boxW + gap);
+    addFill(ops, x, y - boxH, boxW, boxH, SOFT);
+    addText(ops, x + 8, y - 12, item.label, { size: 7, color: MUTED, maxWidth: boxW - 16 });
+    addText(ops, x + 8, y - 28, item.value, { size: 10, color: NAVY, maxWidth: boxW - 16 });
+  });
+  return y - boxH - 12;
+}
+
+function drawTotalBanner(ops, label, value, y) {
+  addFill(ops, MARGIN, y - 30, CONTENT_W, 32, NAVY);
+  addText(ops, MARGIN + 10, y - 18, label, { size: 10, color: [1, 1, 1] });
+  addText(ops, MARGIN + CONTENT_W - 10, y - 18, value, { size: 11, color: [1, 1, 1], align: 'right' });
+  return y - 42;
+}
+
+function drawSectionTitle(ops, y, text) {
+  addText(ops, MARGIN, y, text, { size: 11, color: NAVY });
+  return y - 16;
+}
+
+function drawKeyValuePanel(ops, title, rows, y) {
+  const height = 22 + rows.length * 14;
+  addFill(ops, MARGIN, y - height, CONTENT_W, height, SOFT);
+  addText(ops, MARGIN + 10, y - 14, title, { size: 9, color: NAVY });
+  rows.forEach((row, i) => {
+    const rowY = y - 30 - i * 14;
+    addText(ops, MARGIN + 10, rowY, row.label, { size: 8.5, color: MUTED, maxWidth: CONTENT_W / 2 });
+    addText(ops, MARGIN + CONTENT_W - 10, rowY, row.value, { size: 8.5, color: NAVY, align: 'right' });
+  });
+  return y - height - 12;
+}
+
+function drawClosingNote(ops, lang, y) {
+  addText(ops, MARGIN, y, t(lang, 'staff_note_title'), { size: 8, color: MUTED });
+  y -= 12;
+  wrapText(t(lang, 'staff_note'), CONTENT_W, 7.5).forEach((line) => {
+    addText(ops, MARGIN, y, line, { size: 7.5, color: MUTED });
+    y -= 10;
+  });
+  return y - 8;
+}
+
+function closingNoteHeight(lang) {
+  return 20 + wrapText(t(lang, 'staff_note'), CONTENT_W, 7.5).length * 10 + 8;
+}
+
+function drawSignatures(ops, lang, y) {
+  const gap = 48;
+  const colW = (CONTENT_W - gap) / 2;
+  addStroke(ops, MARGIN, y, MARGIN + colW, y, MUTED, 0.7);
+  addStroke(ops, MARGIN + colW + gap, y, MARGIN + CONTENT_W, y, MUTED, 0.7);
+  addText(ops, MARGIN, y - 12, t(lang, 'sign_employee'), { size: 8, color: MUTED });
+  addText(ops, MARGIN + colW + gap, y - 12, t(lang, 'sign_management'), { size: 8, color: MUTED });
+  return y - 24;
 }
 
 function drawTableHeader(ops, columns, y) {
@@ -314,14 +450,22 @@ function drawRow(ops, columns, values, y, height, { zebra = false, amountOut = f
   });
 }
 
-function newDocumentPage(pages, lang) {
+function newDocumentPage(pages, lang, logo) {
   const ops = createPage();
   pages.push(ops);
-  addPageChrome(ops, lang, pages.length);
+  addPageChrome(ops, lang, pages.length, logo);
   return ops;
 }
 
-export function renderStatementPdf(bookings, lang = 'de') {
+function continueOnNewPage(pages, ops, y, needed, lang, logo, afterNewPage) {
+  if (y - needed >= FOOTER_MIN) return { ops, y };
+  ops = newDocumentPage(pages, lang, logo);
+  y = CONTENT_TOP;
+  if (afterNewPage) y = afterNewPage(ops, y);
+  return { ops, y };
+}
+
+export function renderStatementPdf(bookings, lang = 'de', logo = null) {
   const model = buildStatementModel(bookings, lang);
   const columns = [
     { key: 'date', label: t(lang, 'col_date'), width: 58 },
@@ -332,8 +476,8 @@ export function renderStatementPdf(bookings, lang = 'de') {
     { key: 'amount', label: t(lang, 'col_amount'), width: 88, align: 'right', amount: true }
   ];
   const pages = [];
-  let ops = newDocumentPage(pages, lang);
-  let y = PAGE_H - 56;
+  let ops = newDocumentPage(pages, lang, logo);
+  let y = CONTENT_TOP;
 
   addText(ops, MARGIN, y, model.title, { size: 18, color: NAVY });
   y -= 18;
@@ -341,38 +485,47 @@ export function renderStatementPdf(bookings, lang = 'de') {
   y -= 22;
 
   y = drawSummaryBoxes(ops, [
-    { label: t(lang, 'current_balance'), value: formatTnd(model.totals.balance) },
-    { label: t(lang, 'income'), value: formatTnd(model.totals.totalIn), color: GREEN },
-    { label: t(lang, 'expenses'), value: formatTnd(model.totals.totalOut), color: RED }
+    { label: t(lang, 'current_balance'), value: formatTnd(model.totals.balance), accent: NAVY },
+    { label: t(lang, 'income'), value: formatTnd(model.totals.totalIn), color: GREEN, accent: GREEN },
+    { label: t(lang, 'expenses'), value: formatTnd(model.totals.totalOut), color: RED, accent: RED }
   ], y);
   y = drawSummaryBoxes(ops, [
-    { label: t(lang, 'expenses_siraj'), value: formatTnd(model.totals.paidBySiraj) },
-    { label: t(lang, 'expenses_chedi'), value: formatTnd(model.totals.paidByChedi) }
+    { label: t(lang, 'expenses_siraj'), value: formatTnd(model.totals.paidBySiraj), accent: NAVY },
+    { label: t(lang, 'expenses_chedi'), value: formatTnd(model.totals.paidByChedi), accent: NAVY }
   ], y);
-  y -= 6;
+  y -= 4;
   y = drawTableHeader(ops, columns, y);
 
   if (!model.rows.length) {
     addText(ops, MARGIN, y - 16, t(lang, 'no_bookings'), { size: 10, color: MUTED });
+    y -= 28;
   }
 
   model.rows.forEach((row, index) => {
     const values = [row.date, row.type, row.category, row.description, row.paidBy, row.amount];
     const height = measureRow(columns, values);
-    if (y - height < 48) {
-      ops = newDocumentPage(pages, lang);
-      y = PAGE_H - 56;
-      y = drawTableHeader(ops, columns, y);
-    }
+    const next = continueOnNewPage(pages, ops, y, height, lang, logo, (pageOps, pageY) => drawTableHeader(pageOps, columns, pageY));
+    ops = next.ops;
+    y = next.y;
     drawRow(ops, columns, values, y, height, { zebra: index % 2 === 1, amountOut: row.out });
     y -= height;
   });
 
+  const next = continueOnNewPage(pages, ops, y, 36, lang, logo);
+  ops = next.ops;
+  y = next.y - 12;
+  addStroke(ops, MARGIN, y + 8, MARGIN + CONTENT_W, y + 8, LINE, 0.6);
+  addText(ops, MARGIN + CONTENT_W, y - 6, `${t(lang, 'current_balance')}: ${formatTnd(model.totals.balance)}`, {
+    size: 11,
+    color: NAVY,
+    align: 'right'
+  });
+
   finalizePageNumbers(pages, lang);
-  return buildPdf(pages);
+  return buildPdf(pages, logo);
 }
 
-export function renderStaffPdf(bookings, filter, lang = 'de') {
+export function renderStaffPdf(bookings, filter, lang = 'de', logo = null) {
   const model = buildStaffStatementModel(bookings, filter, lang);
   const columns = [
     { key: 'date', label: t(lang, 'col_date'), width: 62 },
@@ -382,81 +535,116 @@ export function renderStaffPdf(bookings, filter, lang = 'de') {
     { key: 'amount', label: t(lang, 'col_amount'), width: 88, align: 'right', amount: true }
   ];
   const pages = [];
-  let ops = newDocumentPage(pages, lang);
-  let y = PAGE_H - 56;
+  let ops = newDocumentPage(pages, lang, logo);
+  let y = CONTENT_TOP;
 
   addText(ops, MARGIN, y, model.title, { size: 18, color: NAVY });
-  y -= 18;
-  addText(ops, MARGIN, y, `${t(lang, 'employee')}: ${model.employeeName}`, { size: 10, color: NAVY });
-  y -= 14;
-  addText(ops, MARGIN, y, `${t(lang, 'period')}: ${model.period}`, { size: 10, color: NAVY });
-  y -= 14;
-  addText(ops, MARGIN, y, `${t(lang, 'created_on')}: ${model.created}`, { size: 9, color: MUTED });
-  y -= 24;
-
-  addText(ops, MARGIN, y, t(lang, 'staff_summary'), { size: 11, color: NAVY });
   y -= 16;
-  y = drawSummaryBoxes(ops, [
-    { label: t(lang, 'kind_salary'), value: formatTnd(model.totals.salary) },
-    { label: t(lang, 'kind_advance'), value: formatTnd(model.totals.employee_advance) },
-    { label: t(lang, 'kind_tip'), value: formatTnd(model.totals.tip) }
+  addText(ops, MARGIN, y, model.subtitle, { size: 8.5, color: MUTED });
+  y -= 20;
+
+  y = drawInfoBoxes(ops, [
+    { label: t(lang, 'employee'), value: model.employeeName },
+    { label: t(lang, 'period'), value: model.period },
+    { label: t(lang, 'created_on'), value: model.created }
   ], y);
+
+  y = drawSectionTitle(ops, y, t(lang, 'staff_summary'));
   y = drawSummaryBoxes(ops, [
-    { label: t(lang, 'kind_other'), value: formatTnd(model.totals.other_staff) },
-    { label: t(lang, 'total'), value: formatTnd(model.totals.total) }
+    { label: t(lang, 'kind_salary'), value: formatTnd(model.totals.salary), accent: NAVY },
+    { label: t(lang, 'kind_advance'), value: formatTnd(model.totals.employee_advance), accent: NAVY },
+    { label: t(lang, 'kind_tip'), value: formatTnd(model.totals.tip), accent: NAVY },
+    { label: t(lang, 'kind_other'), value: formatTnd(model.totals.other_staff), accent: NAVY }
   ], y);
-  y -= 4;
+  y = drawTotalBanner(ops, t(lang, 'total'), formatTnd(model.totals.total), y);
+
+  if (model.hasSalary) {
+    const next = continueOnNewPage(pages, ops, y, 140, lang, logo);
+    ops = next.ops;
+    y = next.y;
+    y = drawKeyValuePanel(ops, t(lang, 'salary_overview'), [
+      { label: t(lang, 'employee'), value: model.employeeName },
+      { label: t(lang, 'period'), value: model.period },
+      { label: t(lang, 'kind_salary'), value: formatTnd(model.totals.salary) },
+      { label: t(lang, 'advances_plural'), value: formatTnd(model.totals.employee_advance) },
+      { label: t(lang, 'kind_tip'), value: formatTnd(model.totals.tip) },
+      { label: t(lang, 'other_staff_payments'), value: formatTnd(model.totals.other_staff) },
+      { label: t(lang, 'total_staff_payments'), value: formatTnd(model.totals.total) }
+    ], y);
+  }
+
+  const tableStart = continueOnNewPage(pages, ops, y, 48, lang, logo);
+  ops = tableStart.ops;
+  y = tableStart.y;
+  y = drawSectionTitle(ops, y, t(lang, 'payment_details'));
   y = drawTableHeader(ops, columns, y);
 
   if (model.empty) {
     addText(ops, MARGIN, y - 18, model.emptyMessage, { size: 10, color: MUTED });
+    y -= 36;
   } else {
     model.rows.forEach((row, index) => {
       const values = [row.date, row.kind, row.paidBy, row.note, row.amount];
       const height = measureRow(columns, values);
-      if (y - height < 64) {
-        ops = newDocumentPage(pages, lang);
-        y = PAGE_H - 56;
-        y = drawTableHeader(ops, columns, y);
-      }
+      const next = continueOnNewPage(pages, ops, y, height, lang, logo, (pageOps, pageY) => {
+        pageY = drawSectionTitle(pageOps, pageY, t(lang, 'payment_details'));
+        return drawTableHeader(pageOps, columns, pageY);
+      });
+      ops = next.ops;
+      y = next.y;
       drawRow(ops, columns, values, y, height, { zebra: index % 2 === 1, amountOut: true });
       y -= height;
     });
-    if (y < 64) {
-      ops = newDocumentPage(pages, lang);
-      y = PAGE_H - 56;
-    }
-    y -= 16;
+    const totalLine = continueOnNewPage(pages, ops, y, 28, lang, logo);
+    ops = totalLine.ops;
+    y = totalLine.y - 16;
     addText(ops, MARGIN + CONTENT_W, y, `${t(lang, 'grand_total')}: ${formatTnd(model.totals.total)}`, {
       size: 11,
       color: NAVY,
       align: 'right'
     });
+    y -= 18;
   }
 
+  const closingH = closingNoteHeight(lang) + 40;
+  const closing = continueOnNewPage(pages, ops, y, closingH, lang, logo);
+  ops = closing.ops;
+  y = closing.y - 8;
+  y = drawClosingNote(ops, lang, y);
+  drawSignatures(ops, lang, y - 18);
+
   finalizePageNumbers(pages, lang);
-  return buildPdf(pages);
+  return buildPdf(pages, logo);
 }
 
 function safeName(value) {
   return String(value || 'MixMax').replace(/[^\w\-]+/g, '_').replace(/_+/g, '_').slice(0, 40);
 }
 
-export function downloadStatementPdf(bookings, lang = 'de') {
+export function statementPdfFilename(lang, date = todayISO()) {
   const names = {
     de: 'MixMax-Kontoauszug',
     en: 'MixMax-Statement',
     fr: 'MixMax-Releve'
   };
-  downloadPdf(renderStatementPdf(bookings, lang), `${names[lang] || names.de}-${todayISO()}.pdf`);
+  return `${names[lang] || names.de}-${date}.pdf`;
 }
 
-export function downloadStaffPdf(bookings, filter, lang = 'de') {
+export function staffPdfFilename(filter, lang = 'de') {
   const names = {
     de: 'MixMax-Personal-Zahlungsnachweis',
     en: 'MixMax-Staff-Payment-Statement',
     fr: 'MixMax-Releve-Paiements-Personnel'
   };
-  const suffix = [safeName(filter?.employeeName), filter?.year, filter?.month || 'year'].filter(Boolean).join('-');
-  downloadPdf(renderStaffPdf(bookings, filter, lang), `${names[lang] || names.de}-${suffix}.pdf`);
+  const month = filter?.month ? String(filter.month).padStart(2, '0') : '';
+  const parts = [safeName(filter?.employeeName), filter?.year, month].filter((part) => part !== '' && part != null);
+  return `${names[lang] || names.de}-${parts.join('-')}.pdf`;
+}
+
+export function downloadStatementPdf(bookings, lang = 'de', logo = null) {
+  downloadPdf(renderStatementPdf(bookings, lang, logo), statementPdfFilename(lang));
+}
+
+export function downloadStaffPdf(bookings, filter, lang = 'de', logo = null) {
+  downloadPdf(renderStaffPdf(bookings, filter, lang, logo), staffPdfFilename(filter, lang));
 }

@@ -2,22 +2,28 @@ import { describe, expect, it } from 'vitest';
 import {
   applyDelete,
   applyInsert,
+  applyUpdate,
   availableYears,
   bookingFingerprint,
   bookingKindOf,
   bookingTitle,
+  bookingToForm,
+  canExplicitSave,
   canStartSave,
   categoriesForType,
   employeeAdvanceSummaries,
   filterStaffPayments,
+  isBookingAutosaveEnabled,
   isFormComplete,
+  preservesBookingIdentity,
   resolveItem,
   staffKindTotals,
   staffYearMonths,
   summarize,
   toAdvancePayload,
   toNormalPayload,
-  toStaffPaymentPayload
+  toStaffPaymentPayload,
+  toUpdatePayload
 } from './bookings.js';
 import { CUSTOM_ITEM, PURCHASE_CATEGORY, PURCHASE_ITEMS } from './catalog.js';
 
@@ -292,5 +298,87 @@ describe('staff payments', () => {
     expect(isFormComplete({ ...forms.salary, employeeName: '' })).toBe(false);
     expect(isFormComplete(forms.tip)).toBe(true);
     expect(bookingKindOf({ booking_kind: 'salary' })).toBe('salary');
+  });
+});
+
+describe('explicit booking save and edit', () => {
+  const stored = {
+    id: 'keep-me',
+    type: 'out',
+    amount: 38,
+    category: PURCHASE_CATEGORY,
+    item: 'Vanille-Sticks',
+    note: '4 Stück',
+    date: '2026-09-17',
+    paid_by: 'chedi',
+    booking_kind: 'normal',
+    employee_name: null,
+    created_at: '2026-09-17T10:00:00Z',
+    created_by: 'user-1'
+  };
+
+  it('does not auto-save bookings from field events', () => {
+    expect(isBookingAutosaveEnabled()).toBe(false);
+  });
+
+  it('requires an explicit complete form for exactly one insert', () => {
+    expect(canExplicitSave({ complete: false, savingLock: false })).toBe(false);
+    expect(canExplicitSave({ complete: true, savingLock: false })).toBe(true);
+    expect(canExplicitSave({ complete: true, savingLock: true })).toBe(false);
+    expect(isFormComplete({ ...baseForm, amount: '' })).toBe(false);
+  });
+
+  it('validates edit data with the same rules as create', () => {
+    const form = bookingToForm(stored);
+    expect(isFormComplete(form)).toBe(true);
+    expect(isFormComplete({ ...form, amount: 0 })).toBe(false);
+    expect(isFormComplete({ ...form, paidBy: '' })).toBe(false);
+    const staff = bookingToForm({
+      ...stored,
+      booking_kind: 'salary',
+      category: 'Personal',
+      item: null,
+      employee_name: 'Ahmed',
+      note: 'Gehalt – Ahmed'
+    });
+    expect(staff.bookingKind).toBe('salary');
+    expect(isFormComplete(staff)).toBe(true);
+    expect(isFormComplete({ ...staff, employeeName: '' })).toBe(false);
+  });
+
+  it('keeps UUID and writes UPDATE fields without created_at/created_by', () => {
+    const form = bookingToForm({ ...stored, amount: 50 });
+    const payload = toUpdatePayload({ ...form, amount: 50 });
+    expect(payload.id).toBeUndefined();
+    expect(payload.created_at).toBeUndefined();
+    expect(payload.created_by).toBeUndefined();
+    expect(payload.amount).toBe(50);
+    expect(payload.booking_kind).toBe('normal');
+    const updated = { ...stored, amount: 50 };
+    expect(preservesBookingIdentity(stored, updated)).toBe(true);
+    expect(preservesBookingIdentity(stored, { ...updated, id: 'other' })).toBe(false);
+  });
+
+  it('replaces a realtime UPDATE in place without a duplicate', () => {
+    const list = applyInsert([], stored);
+    const next = applyUpdate(list, { ...stored, amount: 90 });
+    expect(next).toHaveLength(1);
+    expect(next[0].id).toBe('keep-me');
+    expect(next[0].amount).toBe(90);
+    expect(applyUpdate(next, { ...stored, amount: 90 })).toHaveLength(1);
+  });
+
+  it('keeps staff booking_kind on edit payload', () => {
+    const payload = toUpdatePayload({
+      bookingKind: 'tip',
+      amount: 25,
+      employeeName: 'Ahmed',
+      date: '2026-04-01',
+      paidBy: 'other',
+      note: 'service'
+    });
+    expect(payload.booking_kind).toBe('tip');
+    expect(payload.category).toBe('Personal');
+    expect(payload.type).toBe('out');
   });
 });
