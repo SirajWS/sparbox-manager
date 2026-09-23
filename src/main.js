@@ -15,6 +15,7 @@ import {
   isFormComplete,
   isStaffPaymentKind,
   needsCustomItemName,
+  needsCustomSourceName,
   runningBalances,
   sortNewestFirst,
   staffEmployeeNames,
@@ -33,11 +34,13 @@ import {
   canRecordAdvance,
   validateEmployeeName
 } from './lib/employees.js';
-import { CUSTOM_ITEM, PURCHASE_CATEGORY, PURCHASE_ITEMS } from './lib/catalog.js';
-import { formatTnd, parseAmount } from './lib/money.js';
+import { CUSTOM_ITEM, CUSTOM_SOURCE, PURCHASE_CATEGORY, PURCHASE_ITEMS, PURCHASE_SOURCES } from './lib/catalog.js';
+import { formatTnd, formatTndNumber, parseAmount } from './lib/money.js';
 import { esc, formatDate, isNetworkError, todayISO } from './lib/format.js';
 import { downloadStaffPdf, downloadStatementPdf, loadPdfLogo } from './lib/pdf.js';
 import { renderStaffChartHtml } from './lib/staffChart.js';
+import { balanceTrend, mountBalanceChart } from './lib/balanceChart.js';
+import { formatHiddenAmount, loadBalanceHidden, saveBalanceHidden } from './lib/privacy.js';
 import {
   applyStaticI18n,
   categoryLabel,
@@ -60,7 +63,7 @@ const VIEW_KEYS = {
   settings: 'nav_settings'
 };
 
-const BOOKING_COLUMNS = 'id,type,amount,currency,category,item,note,date,paid_by,booking_kind,employee_name,created_at,created_by';
+const BOOKING_COLUMNS = 'id,type,amount,currency,category,item,note,date,paid_by,booking_kind,employee_name,purchase_source,created_at,created_by';
 
 const supabase = createSupabase();
 const $ = (sel) => document.querySelector(sel);
@@ -77,6 +80,8 @@ let staffFilterEmployee = '';
 let staffFilterYear = new Date().getFullYear();
 let staffFilterMonth = '';
 let editingId = null;
+let balanceHidden = loadBalanceHidden(window.localStorage);
+let trendRange = 30;
 const editState = {
   type: 'out',
   paidBy: '',
@@ -91,6 +96,8 @@ const formState = {
   get category() { return $('#category-input').value; },
   get item() { return $('#item-input').value; },
   get itemName() { return $('#item-name-input').value; },
+  get purchaseSource() { return $('#source-input').value; },
+  get purchaseSourceName() { return $('#source-name-input').value; },
   get date() { return $('#date-input').value; },
   get note() { return $('#note-input').value; }
 };
@@ -163,6 +170,17 @@ function fillItems() {
   select.value = keep;
 }
 
+function fillSources(select, current) {
+  if (!select) return;
+  const keep = PURCHASE_SOURCES.includes(current) ? current : '';
+  select.innerHTML = `<option value="">${esc(t(lang, 'note_optional'))}</option>`
+    + PURCHASE_SOURCES.map((name) => {
+      const label = name === CUSTOM_SOURCE ? t(lang, 'paid_other') : name;
+      return `<option value="${esc(name)}">${esc(label)}</option>`;
+    }).join('');
+  select.value = keep;
+}
+
 function fillEmployees() {
   const select = $('#employee-input');
   const keep = employees.some((row) => row.name === select.value) ? select.value : '';
@@ -186,9 +204,13 @@ function syncItemFields() {
   const showItem = formState.type === 'out' && formState.category === PURCHASE_CATEGORY;
   $('#item-field').hidden = !showItem;
   $('#item-name-field').hidden = !showItem || formState.item !== CUSTOM_ITEM;
+  $('#source-field').hidden = !showItem;
+  $('#source-name-field').hidden = !showItem || formState.purchaseSource !== CUSTOM_SOURCE;
   if (!showItem) {
     $('#item-input').value = '';
     $('#item-name-input').value = '';
+    $('#source-input').value = '';
+    $('#source-name-input').value = '';
   }
 }
 
@@ -199,6 +221,8 @@ function readBookingForm() {
     category: formState.category,
     item: formState.item,
     itemName: formState.itemName,
+    purchaseSource: formState.purchaseSource,
+    purchaseSourceName: formState.purchaseSourceName,
     date: formState.date,
     paidBy: formState.paidBy,
     note: formState.note,
@@ -225,6 +249,8 @@ function setFormError(id, message) {
 
 function bookingRow(booking, compact = false) {
   const out = booking.type === 'out';
+  const source = String(booking.purchase_source || '').trim();
+  const sourceLine = source ? `<small class="booking-source">${esc(source)}</small>` : '';
   const note = booking.note ? `<small>${esc(booking.note)}</small>` : '';
   const remove = compact ? '' : `<div class="booking-action-row">
       <button type="button" class="text-button" data-edit="${esc(booking.id)}">${esc(t(lang, 'edit'))}</button>
@@ -244,6 +270,7 @@ function bookingRow(booking, compact = false) {
     <div class="booking-copy">
       <strong>${esc(title)}</strong>
       <small>${formatDate(booking.date, lang)} · ${typeLabelI18n(lang, booking.type)} · ${paidByLabelI18n(lang, booking.paid_by)}</small>
+      ${sourceLine}
       ${note}
     </div>
     <div class="booking-actions">
@@ -253,13 +280,36 @@ function bookingRow(booking, compact = false) {
   </article>`;
 }
 
+function syncBalanceVisibility() {
+  const btn = $('#balance-visibility-btn');
+  if (!btn) return;
+  const label = t(lang, balanceHidden ? 'show_balance' : 'hide_balance');
+  btn.setAttribute('aria-label', label);
+  btn.setAttribute('title', label);
+  btn.setAttribute('aria-pressed', balanceHidden ? 'true' : 'false');
+  const on = btn.querySelector('.eye-on');
+  const off = btn.querySelector('.eye-off');
+  if (on) on.hidden = balanceHidden;
+  if (off) off.hidden = !balanceHidden;
+}
+
 function renderOverview() {
   const totals = summarize(bookings);
-  $('#balance-value').textContent = formatTnd(totals.balance);
+  $('#balance-value').textContent = formatHiddenAmount(balanceHidden, totals.balance, formatTnd);
+  syncBalanceVisibility();
   $('#sum-in').textContent = formatTnd(totals.totalIn);
   $('#sum-out').textContent = formatTnd(totals.totalOut);
   $('#sum-siraj').textContent = formatTnd(totals.paidBySiraj);
   $('#sum-chedi').textContent = formatTnd(totals.paidByChedi);
+  document.querySelectorAll('[data-trend-range]').forEach((btn) => {
+    btn.classList.toggle('active', String(btn.dataset.trendRange) === String(trendRange));
+  });
+  mountBalanceChart($('#balance-trend'), balanceTrend(bookings, trendRange, todayISO()), lang, {
+    hidden: balanceHidden,
+    formatTnd,
+    formatAxis: formatTndNumber,
+    formatDate
+  });
   const recent = sortNewestFirst(bookings).slice(0, 6);
   $('#recent-bookings').innerHTML = recent.length
     ? recent.map((row) => bookingRow(row, true)).join('')
@@ -366,11 +416,12 @@ function renderStatement() {
         <tbody>${rows.map((booking) => {
           const out = booking.type === 'out';
           const extra = booking.employee_name || (booking.item ? itemLabel(lang, booking.item) : '–');
+          const source = String(booking.purchase_source || '').trim();
           return `<tr>
             <td>${formatDate(booking.date, lang)}</td>
             <td><span class="type-pill ${out ? 'out' : ''}">${typeLabelI18n(lang, booking.type)}</span></td>
             <td>${esc(categoryLabel(lang, booking.category))}</td>
-            <td>${esc(extra)}</td>
+            <td>${esc(extra)}${source ? `<small class="booking-source">${esc(`${t(lang, 'purchase_source_other')}: ${source}`)}</small>` : ''}</td>
             <td>${esc(paidByLabelI18n(lang, booking.paid_by))}</td>
             <td>${esc(booking.note || '–')}</td>
             <td class="right amount ${out ? 'out' : ''}">${out ? '−' : '+'}${formatTnd(booking.amount)}</td>
@@ -410,6 +461,7 @@ function applyLanguage() {
   $('#view-title').textContent = t(lang, VIEW_KEYS[currentView] || currentView);
   fillCategories();
   fillItems();
+  fillSources($('#source-input'), $('#source-input').value);
   tickClock();
   syncAddButton();
   if (editingId) {
@@ -526,6 +578,7 @@ async function addBooking() {
       $('#amount-input').value = '';
       $('#note-input').value = '';
       if (needsCustomItemName(form)) $('#item-name-input').value = '';
+      if (needsCustomSourceName(form)) $('#source-name-input').value = '';
       showToast(t(lang, 'saved', { amount: formatTnd(form.amount) }));
       $('#amount-input').focus();
     });
@@ -565,6 +618,8 @@ function readEditForm() {
     category: staff ? 'Personal' : $('#edit-category-input').value,
     item: $('#edit-item-input').value,
     itemName: $('#edit-item-name-input').value,
+    purchaseSource: $('#edit-source-input').value,
+    purchaseSourceName: $('#edit-source-name-input').value,
     date: $('#edit-date-input').value,
     paidBy: editState.paidBy,
     note: $('#edit-note-input').value,
@@ -591,6 +646,7 @@ function fillEditSelects() {
   item.innerHTML = `<option value="">${esc(t(lang, 'item_placeholder'))}</option>`
     + PURCHASE_ITEMS.map((name) => `<option value="${esc(name)}">${esc(itemLabel(lang, name))}</option>`).join('');
   item.value = keepItem;
+  fillSources($('#edit-source-input'), $('#edit-source-input').value);
 
   const emp = $('#edit-employee-input');
   const names = employees.map((row) => row.name);
@@ -606,9 +662,13 @@ function syncEditItemFields() {
   const showItem = !editState.staff && editState.type === 'out' && $('#edit-category-input').value === PURCHASE_CATEGORY;
   $('#edit-item-field').hidden = !showItem;
   $('#edit-item-name-field').hidden = !showItem || $('#edit-item-input').value !== CUSTOM_ITEM;
+  $('#edit-source-field').hidden = !showItem;
+  $('#edit-source-name-field').hidden = !showItem || $('#edit-source-input').value !== CUSTOM_SOURCE;
   if (!showItem) {
     $('#edit-item-input').value = '';
     $('#edit-item-name-input').value = '';
+    $('#edit-source-input').value = '';
+    $('#edit-source-name-input').value = '';
   }
 }
 
@@ -642,6 +702,9 @@ function openEdit(id) {
   $('#edit-category-input').value = form.category;
   $('#edit-item-input').value = form.item;
   $('#edit-item-name-input').value = form.itemName;
+  fillSources($('#edit-source-input'), form.purchaseSource);
+  $('#edit-source-input').value = form.purchaseSource;
+  $('#edit-source-name-input').value = form.purchaseSourceName;
   $('#edit-date-input').value = form.date;
   $('#edit-note-input').value = form.note;
   $('#edit-employee-input').value = form.employeeName;
@@ -847,6 +910,22 @@ function bindAppEvents() {
     syncAddButton();
   });
   $('#item-name-input').addEventListener('input', syncAddButton);
+  $('#source-input').addEventListener('change', () => {
+    syncItemFields();
+    syncAddButton();
+  });
+  $('#source-name-input').addEventListener('input', syncAddButton);
+  $('#balance-visibility-btn').addEventListener('click', () => {
+    balanceHidden = saveBalanceHidden(!balanceHidden, window.localStorage);
+    renderOverview();
+  });
+  document.querySelectorAll('[data-trend-range]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const value = btn.dataset.trendRange;
+      trendRange = value === 'all' ? 'all' : Number(value);
+      renderOverview();
+    });
+  });
   $('#amount-input').addEventListener('input', syncAddButton);
   $('#amount-input').addEventListener('keydown', (event) => {
     if (event.key === 'Enter') event.preventDefault();
@@ -895,6 +974,7 @@ function bindAppEvents() {
   });
   $('#edit-category-input').addEventListener('change', syncEditItemFields);
   $('#edit-item-input').addEventListener('change', syncEditItemFields);
+  $('#edit-source-input').addEventListener('change', syncEditItemFields);
   $('#edit-save-btn').addEventListener('click', saveEdit);
   $('#edit-cancel-btn').addEventListener('click', closeEdit);
   $('#edit-form').addEventListener('submit', (event) => event.preventDefault());

@@ -19,6 +19,7 @@ create table if not exists public.bookings (
   paid_by text not null check (paid_by in ('siraj', 'chedi', 'other')),
   booking_kind text not null default 'normal' check (booking_kind in ('normal', 'employee_advance', 'salary', 'tip', 'other_staff')),
   employee_name text,
+  purchase_source text,
   created_at timestamptz not null default now(),
   created_by uuid not null references auth.users (id)
 );
@@ -27,6 +28,7 @@ create table if not exists public.bookings (
 alter table public.bookings add column if not exists item text;
 alter table public.bookings add column if not exists booking_kind text;
 alter table public.bookings add column if not exists employee_name text;
+alter table public.bookings add column if not exists purchase_source text;
 
 update public.bookings
 set booking_kind = 'normal'
@@ -89,6 +91,9 @@ begin
   end if;
   if new.item is not null and btrim(new.item) = '' then
     new.item := null;
+  end if;
+  if new.purchase_source is not null and btrim(new.purchase_source) = '' then
+    new.purchase_source := null;
   end if;
   if new.employee_name is not null and btrim(new.employee_name) = '' then
     new.employee_name := null;

@@ -65,7 +65,16 @@
       <section class="view active" id="view-overview">
         <div class="hero-grid">
           <article class="balance-card">
-            <div class="card-head"><span data-i18n="current_balance">Aktueller Stand</span><span class="private-badge">TND</span></div>
+            <div class="card-head">
+              <span data-i18n="current_balance">Aktueller Stand</span>
+              <div class="balance-head-actions">
+                <button type="button" class="icon-btn" id="balance-visibility-btn" aria-pressed="false" aria-label="Saldo ausblenden" title="Saldo ausblenden">
+                  <svg class="eye-on" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 5c5.2 0 9.3 3.3 10.7 7-1.4 3.7-5.5 7-10.7 7S2.7 15.7 1.3 12C2.7 8.3 6.8 5 12 5zm0 3.2A3.8 3.8 0 1 0 12 15.8 3.8 3.8 0 0 0 12 8.2z"/></svg>
+                  <svg class="eye-off" viewBox="0 0 24 24" aria-hidden="true" hidden><path fill="currentColor" d="M3.3 2.5 2 3.8l3.1 3.1C3.3 8.3 1.9 10 1.3 12c1.4 3.7 5.5 7 10.7 7 2 0 3.8-.5 5.4-1.3l3.6 3.6 1.3-1.3L3.3 2.5zM12 17c-4.1 0-7.6-2.5-9-5 .5-1 1.4-2.1 2.6-3.1l2 2A3.8 3.8 0 0 0 12 15.8c.4 0 .8 0 1.1-.1l1.6 1.6c-.8.4-1.7.7-2.7.7zm8.3-2.4-2.2-2.2c.5-.7.8-1.5.9-2.4-1.4-3.7-5.5-7-10.7-7-.8 0-1.6.1-2.3.3L7.4 5C8.8 4.4 10.4 4 12 4c5.2 0 9.3 3.3 10.7 7-.5 1.3-1.4 2.5-2.4 3.6z"/></svg>
+                </button>
+                <span class="private-badge">TND</span>
+              </div>
+            </div>
             <div class="balance" id="balance-value">0,000 TND</div>
             <p class="balance-sub" data-i18n="income_minus_expenses">Einzahlungen minus Ausgaben</p>
           </article>
@@ -80,6 +89,22 @@
             </div>
           </article>
         </div>
+
+        <article class="panel trend-panel">
+          <div class="panel-head trend-head">
+            <div>
+              <span class="eyebrow" data-i18n="recent_activity">Verlauf</span>
+              <h2 data-i18n="balance_trend">Saldoentwicklung</h2>
+            </div>
+            <div class="trend-range" role="group" data-i18n-aria="balance_trend" aria-label="Saldoentwicklung">
+              <button type="button" class="choice" data-trend-range="7" data-i18n="trend_7">7 Tage</button>
+              <button type="button" class="choice active" data-trend-range="30" data-i18n="trend_30">30 Tage</button>
+              <button type="button" class="choice" data-trend-range="90" data-i18n="trend_90">90 Tage</button>
+              <button type="button" class="choice" data-trend-range="all" data-i18n="trend_all">Gesamt</button>
+            </div>
+          </div>
+          <div id="balance-trend" class="balance-trend"></div>
+        </article>
 
         <article class="panel recent-panel">
           <div class="panel-head">
@@ -113,6 +138,12 @@
             </label>
             <label class="field field-span" id="item-name-field" hidden><span data-i18n="item_name">Artikelname</span>
               <input id="item-name-input" maxlength="60" data-i18n-placeholder="item_name_placeholder" placeholder="z. B. Mayonnaise" />
+            </label>
+            <label class="field" id="source-field" hidden><span data-i18n="purchase_source">Geschäft / Einkaufsquelle</span>
+              <select id="source-input"></select>
+            </label>
+            <label class="field field-span" id="source-name-field" hidden><span data-i18n="purchase_source_other">Geschäft</span>
+              <input id="source-name-input" maxlength="80" data-i18n-placeholder="purchase_source_placeholder" placeholder="z. B. Superette Ali" />
             </label>
             <label class="field"><span data-i18n="date">Datum</span>
               <input id="date-input" type="date" required />
@@ -306,6 +337,12 @@
         </label>
         <label class="field field-span" id="edit-item-name-field" hidden><span data-i18n="item_name">Artikelname</span>
           <input id="edit-item-name-input" maxlength="60" data-i18n-placeholder="item_name_placeholder" />
+        </label>
+        <label class="field" id="edit-source-field" hidden><span data-i18n="purchase_source">Geschäft / Einkaufsquelle</span>
+          <select id="edit-source-input"></select>
+        </label>
+        <label class="field field-span" id="edit-source-name-field" hidden><span data-i18n="purchase_source_other">Geschäft</span>
+          <input id="edit-source-name-input" maxlength="80" data-i18n-placeholder="purchase_source_placeholder" />
         </label>
         <label class="field"><span data-i18n="date">Datum</span>
           <input id="edit-date-input" type="date" required />

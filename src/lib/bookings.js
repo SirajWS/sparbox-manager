@@ -1,5 +1,12 @@
 import { isPositiveAmount, roundAmount } from './money.js';
-import { CUSTOM_ITEM, PERSONNEL_CATEGORY, PURCHASE_CATEGORY, PURCHASE_ITEMS } from './catalog.js';
+import {
+  CUSTOM_ITEM,
+  CUSTOM_SOURCE,
+  PERSONNEL_CATEGORY,
+  PURCHASE_CATEGORY,
+  PURCHASE_ITEMS,
+  PURCHASE_SOURCES
+} from './catalog.js';
 
 export const BOOKING_TYPES = {
   out: 'Ausgabe',
@@ -59,6 +66,22 @@ export function resolveItem(form) {
   if (selected === CUSTOM_ITEM) {
     const custom = String(form.itemName || '').trim();
     return custom || null;
+  }
+  return selected;
+}
+
+export function needsCustomSourceName(form) {
+  return form.type === 'out'
+    && isPurchaseCategory(form.category)
+    && form.purchaseSource === CUSTOM_SOURCE;
+}
+
+export function resolvePurchaseSource(form) {
+  if (form.type !== 'out' || !isPurchaseCategory(form.category)) return null;
+  const selected = String(form.purchaseSource || '').trim();
+  if (!selected) return null;
+  if (selected === CUSTOM_SOURCE) {
+    return String(form.purchaseSourceName || '').trim() || null;
   }
   return selected;
 }
@@ -127,6 +150,7 @@ export function bookingFingerprint(form) {
     roundAmount(form.amount),
     form.category || '',
     resolveItem(form) || '',
+    resolvePurchaseSource(form) || '',
     form.date || '',
     form.paidBy || '',
     String(form.employeeName || '').trim(),
@@ -178,6 +202,8 @@ export function bookingToForm(booking) {
   const kind = bookingKindOf(booking);
   const storedItem = String(booking?.item || '').trim();
   const knownItem = PURCHASE_ITEMS.includes(storedItem);
+  const storedSource = String(booking?.purchase_source || '').trim();
+  const knownSource = PURCHASE_SOURCES.includes(storedSource) && storedSource !== CUSTOM_SOURCE;
   const purchase = booking?.type === 'out' && booking?.category === PURCHASE_CATEGORY;
   return {
     id: booking?.id || null,
@@ -186,6 +212,8 @@ export function bookingToForm(booking) {
     category: booking?.category || '',
     item: purchase ? (knownItem ? storedItem : (storedItem ? CUSTOM_ITEM : '')) : '',
     itemName: purchase && storedItem && !knownItem ? storedItem : '',
+    purchaseSource: purchase ? (knownSource ? storedSource : (storedSource ? CUSTOM_SOURCE : '')) : '',
+    purchaseSourceName: purchase && storedSource && !knownSource ? storedSource : '',
     date: booking?.date || '',
     paidBy: booking?.paid_by || '',
     note: customNoteFromBooking(booking),
@@ -392,6 +420,7 @@ export function toStaffPaymentPayload(form) {
     currency: 'TND',
     category: PERSONNEL_CATEGORY,
     item: null,
+    purchase_source: null,
     note: staffPaymentNote(kind, employeeName, form.note),
     date: form.date,
     paid_by: form.paidBy,
@@ -411,6 +440,7 @@ export function toNormalPayload(form) {
     currency: 'TND',
     category: form.category,
     item: resolveItem(form),
+    purchase_source: resolvePurchaseSource(form),
     note: String(form.note || '').trim() || null,
     date: form.date,
     paid_by: form.paidBy,

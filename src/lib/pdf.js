@@ -193,8 +193,8 @@ function downloadPdf(content, name) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-const HEADER_H = 64;
-const LOGO_PT = 46;
+const HEADER_H = 68;
+const LOGO_PT = 50;
 const CONTENT_TOP = PAGE_H - HEADER_H - 16;
 const GOLD = [0.83, 0.635, 0.18];
 const FOOTER_MIN = 48;
@@ -278,8 +278,12 @@ export function statementDescription(booking, lang) {
   else if (isStaffPayment(booking)) {
     lines.push(`${staffKindLabel(lang, bookingKindOf(booking))} · ${booking.employee_name || t(lang, 'employee')}`);
   }
+  const source = String(booking.purchase_source || '').trim();
+  if (source) lines.push(`${t(lang, 'purchase_source_other')}: ${source}`);
   const note = userNote(booking);
-  if (note && note !== lines[0]) lines.push(note);
+  if (note && note !== lines[0] && note !== source) {
+    lines.push(booking.item || source ? `${t(lang, 'col_note')}: ${note}` : note);
+  }
   return lines;
 }
 
@@ -468,12 +472,12 @@ function continueOnNewPage(pages, ops, y, needed, lang, logo, afterNewPage) {
 export function renderStatementPdf(bookings, lang = 'de', logo = null) {
   const model = buildStatementModel(bookings, lang);
   const columns = [
-    { key: 'date', label: t(lang, 'col_date'), width: 58 },
-    { key: 'type', label: t(lang, 'col_type'), width: 62 },
-    { key: 'category', label: t(lang, 'col_category'), width: 78 },
-    { key: 'description', label: t(lang, 'col_item_desc'), width: 155 },
-    { key: 'paidBy', label: t(lang, 'col_paid_by'), width: 58 },
-    { key: 'amount', label: t(lang, 'col_amount'), width: 88, align: 'right', amount: true }
+    { key: 'date', label: t(lang, 'col_date'), width: 52 },
+    { key: 'type', label: t(lang, 'col_type'), width: 52 },
+    { key: 'category', label: t(lang, 'col_category'), width: 74 },
+    { key: 'description', label: t(lang, 'col_purchase_desc'), width: 185 },
+    { key: 'paidBy', label: t(lang, 'col_paid_by'), width: 54 },
+    { key: 'amount', label: t(lang, 'col_amount'), width: 82, align: 'right', amount: true }
   ];
   const pages = [];
   let ops = newDocumentPage(pages, lang, logo);

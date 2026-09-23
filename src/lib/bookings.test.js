@@ -21,11 +21,12 @@ import {
   staffYearMonths,
   summarize,
   toAdvancePayload,
+  resolvePurchaseSource,
   toNormalPayload,
   toStaffPaymentPayload,
   toUpdatePayload
 } from './bookings.js';
-import { CUSTOM_ITEM, PURCHASE_CATEGORY, PURCHASE_ITEMS } from './catalog.js';
+import { CUSTOM_ITEM, CUSTOM_SOURCE, PURCHASE_CATEGORY, PURCHASE_ITEMS } from './catalog.js';
 
 const baseForm = {
   type: 'out',
@@ -63,6 +64,24 @@ describe('booking form completeness', () => {
     expect(isFormComplete(rent)).toBe(true);
     expect(resolveItem(rent)).toBe(null);
     expect(toNormalPayload(rent).item).toBe(null);
+    expect(toNormalPayload(rent).purchase_source).toBe(null);
+  });
+
+  it('saves an optional purchase source and allows free text', () => {
+    expect(isFormComplete(baseForm)).toBe(true);
+    expect(toNormalPayload(baseForm).purchase_source).toBe(null);
+    expect(resolvePurchaseSource({ ...baseForm, purchaseSource: 'Aziza' })).toBe('Aziza');
+    expect(toNormalPayload({ ...baseForm, purchaseSource: 'Aziza' }).purchase_source).toBe('Aziza');
+    expect(resolvePurchaseSource({
+      ...baseForm,
+      purchaseSource: CUSTOM_SOURCE,
+      purchaseSourceName: 'Superette Ali'
+    })).toBe('Superette Ali');
+    expect(resolvePurchaseSource({
+      ...baseForm,
+      purchaseSource: CUSTOM_SOURCE,
+      purchaseSourceName: ''
+    })).toBe(null);
   });
 });
 
@@ -344,6 +363,22 @@ describe('explicit booking save and edit', () => {
     expect(staff.bookingKind).toBe('salary');
     expect(isFormComplete(staff)).toBe(true);
     expect(isFormComplete({ ...staff, employeeName: '' })).toBe(false);
+  });
+
+  it('maps and updates purchase_source on the same booking id', () => {
+    const form = bookingToForm({ ...stored, purchase_source: 'Carrefour' });
+    expect(form.purchaseSource).toBe('Carrefour');
+    const payload = toUpdatePayload({ ...form, purchaseSource: CUSTOM_SOURCE, purchaseSourceName: 'Superette Ali' });
+    expect(payload.purchase_source).toBe('Superette Ali');
+    expect(payload.item).toBe('Vanille-Sticks');
+  });
+
+  it('keeps old bookings without purchase_source working', () => {
+    const form = bookingToForm({ ...stored, purchase_source: null });
+    expect(form.purchaseSource).toBe('');
+    expect(form.purchaseSourceName).toBe('');
+    expect(isFormComplete(form)).toBe(true);
+    expect(toUpdatePayload(form).purchase_source).toBe(null);
   });
 
   it('keeps UUID and writes UPDATE fields without created_at/created_by', () => {

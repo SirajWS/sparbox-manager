@@ -61,14 +61,34 @@ describe('statement PDF model', () => {
     expect(model.totals.paidByChedi).toBe(838);
     expect(model.rows).toHaveLength(3);
     const purchase = model.rows.find((row) => row.amount.startsWith('-38'));
-    expect(purchase.description).toEqual(['Vanille-Sticks', '4 Stück × 9,500 TND']);
+    expect(purchase.description).toEqual(['Vanille-Sticks', 'Notiz: 4 Stück × 9,500 TND']);
+    const sourced = buildStatementModel([{
+      ...ledger[1],
+      purchase_source: 'Superette El Hadj'
+    }], 'de').rows[0];
+    expect(sourced.description).toEqual([
+      'Vanille-Sticks',
+      'Geschäft: Superette El Hadj',
+      'Notiz: 4 Stück × 9,500 TND'
+    ]);
+    expect(statementDescription({ ...ledger[1], purchase_source: null }, 'de')).toEqual([
+      'Vanille-Sticks',
+      'Notiz: 4 Stück × 9,500 TND'
+    ]);
+    expect(statementDescription({ ...ledger[1], purchase_source: '', note: null }, 'de')).toEqual(['Vanille-Sticks']);
     expect(purchase.paidBy).toBe('Chedi');
   });
 
   it('translates statement labels for EN and FR', () => {
     expect(buildStatementModel(ledger, 'en').title).toBe('Statement');
     expect(buildStatementModel(ledger, 'fr').title).toBe('Relevé de compte');
-    expect(statementDescription(ledger[1], 'fr')[0]).toBe('Bâtonnets vanille');
+    expect(statementDescription(ledger[1], 'fr')[0]).toBe('Bâtons de vanille');
+    expect(statementDescription({ ...ledger[1], purchase_source: 'Aziza' }, 'en')).toEqual([
+      'Vanilla sticks',
+      'Shop: Aziza',
+      'Note: 4 Stück × 9,500 TND'
+    ]);
+    expect(statementDescription({ ...ledger[1], purchase_source: 'Aziza' }, 'fr')[1]).toBe('Magasin: Aziza');
   });
 });
 
@@ -203,6 +223,8 @@ describe('PDF binary', () => {
     const pdf = renderStatementPdf(ledger, 'de');
     expect(pdf).toContain('Aktueller Stand');
     expect(pdf).toContain('Kontoauszug');
+    expect(pdf).toContain('Einkauf / Beschreibung');
+    expect(pdf).toContain('Bezahlt von');
     expect(pdf).toContain('Seite 1 / 1');
     expect(pdf).not.toContain('{total}');
 
@@ -254,7 +276,7 @@ describe('PDF binary', () => {
       alpha: Uint8Array.from([255, 255, 0, 0])
     };
     const pdf = renderStatementPdf(ledger, 'de', logo);
-    expect(pdf).toContain('46 0 0 46');
+    expect(pdf).toContain('50 0 0 50');
     expect(pdf).toContain('/Im1 Do');
   });
 
